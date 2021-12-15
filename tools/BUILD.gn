@@ -1,0 +1,148 @@
+# Copyright (c) 2021 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/ohos.gni")
+config("e2fsprogs-defaults") {
+    cflags = [
+        "-std=gnu89",
+        "-Wno-implicit-function-declaration",
+        "-Wno-pointer-sign",
+    ]
+}
+
+###################################################
+##Build f2fscrypt
+ohos_executable("f2fscrypt") {
+  configs = [ ":e2fsprogs-defaults" ]
+  sources = [ 
+      "f2fscrypt.c",
+      "sha512.c",
+  ]
+  include_dirs = [
+    ".",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0/include",
+    "//third_party/e2fsprogs/lib/uuid",
+  ]
+  cflags = [ "-Wno-error=format-extra-args" ]
+
+  deps = [
+      "//third_party/e2fsprogs/lib/uuid:libext2_uuid",
+  ]
+
+  # ldflags = [ "-stdlib=libc++_static" ]
+
+  install_enable = true
+  subsystem_name = "storage_manager"
+  part_name = "storage_standard"
+  install_images = [
+    "system",
+  ]
+}
+
+###################################################
+##Build f2fstat
+ohos_executable("f2fstat") {
+  configs = [ ":e2fsprogs-defaults" ]
+  sources = [
+    "f2fstat.c",
+  ]
+
+  include_dirs = [
+    ".",
+  ]
+  cflags = [
+    "-Wno-error=format",
+    "-Wno-error=type-limits",
+    "-Wno-format-extra-args",
+  ]
+
+  deps = [
+  ]
+
+  # ldflags = [ "-stdlib=libc++_static" ]
+  install_enable = true
+  subsystem_name = "storage_manager"
+  part_name = "storage_standard"
+  install_images = [
+    "system",
+  ]
+}
+
+###################################################
+##Build fibmap.f2fs
+ohos_executable("fibmap.f2fs") {
+  configs = [ ":e2fsprogs-defaults" ]
+  sources = [
+    "fibmap.c",
+  ]
+
+  include_dirs = [
+    ".",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0/include",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib",
+  ]
+
+  cflags = [
+    "-Wno-error=format",
+    "-Wno-error=type-limits",
+    "-Wno-format-extra-args",
+  ]
+
+  deps = [
+      "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib:libf2fs",
+  ]
+
+  defines = [
+    "HAVE_CONFIG_H",
+  ]
+
+  # ldflags = [ "-stdlib=libc++_static" ]
+  install_enable = true
+  subsystem_name = "storage_manager"
+  part_name = "storage_standard"
+  install_images = [
+    "system",
+  ]
+}
+
+###################################################
+##Build parse.f2fs
+ohos_executable("parse.f2fs") {
+  configs = [ ":e2fsprogs-defaults" ]
+  sources = [
+    "f2fs_io_parse.c",
+  ]
+
+  include_dirs = [
+    ".",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
+  ]
+  cflags = [
+    "-Wno-error=format",
+    "-Wno-error=type-limits",
+    "-Wno-format-extra-args",
+  ]
+
+  deps = [
+  ]
+
+  ldflags = [ "-stdlib=libc++_static" ]
+  install_enable = true
+  subsystem_name = "storage_manager"
+  part_name = "storage_standard"
+  install_images = [
+    "system",
+  ]
+}

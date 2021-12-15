@@ -1,0 +1,74 @@
+# Copyright (c) 2021 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/ohos.gni")
+config("e2fsprogs-defaults") {
+  cflags = [ 
+        "-Wno-pointer-sign",
+        "-Wno-unused-variable",
+        "-Wno-string-plus-int",
+        "-Wno-error=format",
+        "-Wno-unused-function",
+        "-Wno-unused-parameter",
+        "-Wno-incompatible-pointer-types",
+  ]
+}
+
+###################################################
+##Build fsck
+ohos_executable("fsck.f2fs") {
+  configs = [ ":e2fsprogs-defaults" ]
+  sources = [
+        "fsck.c",
+        "main.c",
+        "defrag.c",
+        "dict.c",
+        "dir.c",
+        "dump.c",
+        "mkquota.c",
+        "mount.c",
+        "node.c",
+        "quotaio.c",
+        "quotaio_tree.c",
+        "quotaio_v2.c",
+        "resize.c",
+        "segment.c",
+        "sload.c",
+        "xattr.c",
+  ]
+
+  include_dirs = [
+    ".",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0/include",
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib",
+    "//third_party/e2fsprogs/contrib/android",
+  ]
+
+  deps = [
+    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib:libf2fs",
+    "//third_party/e2fsprogs/contrib/android:libdacconfig",
+  ]
+
+  defines = [
+    "HAVE_CONFIG_H",
+  ]
+
+  # ldflags = [ "-stdlib=libc++_static" ]
+  install_enable = true
+  subsystem_name = "storage_manager"
+  part_name = "storage_standard"
+  install_images = [
+    "system",
+  ]
+}
