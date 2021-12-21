@@ -1,6 +1,6 @@
 [
     {
-        "Name"                  : "f2fs-tools-1.14.0",
+        "Name"                  : "f2fs-tools",
         "License"               : "GNU GPL-2.0",
         "License File"          : "COPYING",
         "Version Number"        : "1.14.0",
@@ -9,7 +9,7 @@
         "Description"           : "The f2fs-tools package contains the utilities for handling the f2fs file system."
     }
     {
-        "Name"                  : "f2fs-tools-1.14.0",
+        "Name"                  : "f2fs-tools",
         "License"               : "GNU LGPL-2.1+",
         "License File"          : "COPYING",
         "Version Number"        : "1.14.0",
