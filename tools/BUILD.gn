@@ -33,8 +33,6 @@ ohos_executable("f2fscrypt") {
       "//third_party/e2fsprogs/lib/uuid:libext2_uuid",
   ]
 
-  # ldflags = [ "-stdlib=libc++_static" ]
-
   install_enable = true
   subsystem_name = "storage_manager"
   part_name = "storage_standard"
@@ -63,7 +61,6 @@ ohos_executable("f2fstat") {
   deps = [
   ]
 
-  # ldflags = [ "-stdlib=libc++_static" ]
   install_enable = true
   subsystem_name = "storage_manager"
   part_name = "storage_standard"
@@ -101,37 +98,6 @@ ohos_executable("fibmap.f2fs") {
     "HAVE_CONFIG_H",
   ]
 
-  # ldflags = [ "-stdlib=libc++_static" ]
-  install_enable = true
-  subsystem_name = "storage_manager"
-  part_name = "storage_standard"
-  install_images = [
-    "system",
-  ]
-}
-
-###################################################
-##Build parse.f2fs
-ohos_executable("parse.f2fs") {
-  configs = [ ":e2fsprogs-defaults" ]
-  sources = [
-    "f2fs_io_parse.c",
-  ]
-
-  include_dirs = [
-    ".",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
-  ]
-  cflags = [
-    "-Wno-error=format",
-    "-Wno-error=type-limits",
-    "-Wno-format-extra-args",
-  ]
-
-  deps = [
-  ]
-
-  ldflags = [ "-stdlib=libc++_static" ]
   install_enable = true
   subsystem_name = "storage_manager"
   part_name = "storage_standard"

@@ -41,7 +41,6 @@ ohos_executable("mkfs.f2fs") {
     "HAVE_CONFIG_H",
   ]
 
-  # ldflags = [ "-stdlib=libc++_static" ]
   install_enable = true
   subsystem_name = "storage_manager"
   part_name = "storage_standard"
