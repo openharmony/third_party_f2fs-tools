@@ -1,66 +1,67 @@
 # Copyright (c) 2021 Huawei Device Co., Ltd.
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2 as
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
-config("e2fsprogs-defaults") {
-  cflags = [ 
-        "-Wno-pointer-sign",
-        "-Wno-unused-variable",
-        "-Wno-string-plus-int",
-        "-Wno-error=format",
-        "-Wno-unused-function",
-        "-Wno-unused-parameter",
-        "-Wno-incompatible-pointer-types",
+config("f2fs-defaults") {
+  cflags = [
+    "-Wno-pointer-sign",
+    "-Wno-unused-variable",
+    "-Wno-string-plus-int",
+    "-Wno-error=format",
+    "-Wno-unused-function",
+    "-Wno-unused-parameter",
+    "-Wno-incompatible-pointer-types",
   ]
 }
 
 ###################################################
 ##Build fsck
 ohos_executable("fsck.f2fs") {
-  configs = [ ":e2fsprogs-defaults" ]
+  configs = [ ":f2fs-defaults" ]
   sources = [
-        "fsck.c",
-        "main.c",
-        "defrag.c",
-        "dict.c",
-        "dir.c",
-        "dump.c",
-        "mkquota.c",
-        "mount.c",
-        "node.c",
-        "quotaio.c",
-        "quotaio_tree.c",
-        "quotaio_v2.c",
-        "resize.c",
-        "segment.c",
-        "sload.c",
-        "xattr.c",
+    "defrag.c",
+    "dict.c",
+    "dir.c",
+    "dump.c",
+    "fsck.c",
+    "main.c",
+    "mkquota.c",
+    "mount.c",
+    "node.c",
+    "quotaio.c",
+    "quotaio_tree.c",
+    "quotaio_v2.c",
+    "resize.c",
+    "segment.c",
+    "sload.c",
+    "xattr.c",
   ]
 
   include_dirs = [
     ".",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0/include",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib",
+    "//third_party/f2fs-tools",
+    "//third_party/f2fs-tools/include",
+    "//third_party/f2fs-tools/lib",
     "//third_party/e2fsprogs/contrib/android",
   ]
 
   deps = [
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib:libf2fs",
     "//third_party/e2fsprogs/contrib/android:libdacconfig",
+    "//third_party/f2fs-tools/lib:libf2fs",
   ]
 
-  defines = [
-    "HAVE_CONFIG_H",
+  defines = [ "HAVE_CONFIG_H" ]
+
+  symlink_target_name = [
+    "resize.f2fs",
+    "sload.f2fs",
   ]
 
   install_enable = true
-  subsystem_name = "storage_manager"
+  subsystem_name = "filemanagement"
   part_name = "storage_standard"
-  install_images = [
-    "system",
-  ]
+  install_images = [ "system" ]
 }
