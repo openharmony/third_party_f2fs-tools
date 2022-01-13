@@ -1,50 +1,46 @@
 # Copyright (c) 2021 Huawei Device Co., Ltd.
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2 as
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
-config("e2fsprogs-defaults") {
-  cflags = [ 
-        "-Wno-pointer-sign",
-        "-Wno-unused-variable",
-        "-Wno-string-plus-int",
-        "-Wno-error=format",
+config("f2fs-defaults") {
+  cflags = [
+    "-Wno-pointer-sign",
+    "-Wno-unused-variable",
+    "-Wno-string-plus-int",
+    "-Wno-error=format",
   ]
 }
 
 ###################################################
 ##Build mkfs.f2fs
 ohos_executable("mkfs.f2fs") {
-  configs = [ ":e2fsprogs-defaults" ]
+  configs = [ ":f2fs-defaults" ]
   sources = [
-        "f2fs_format_main.c",
-        "f2fs_format_utils.c",
-        "f2fs_format.c",
+    "f2fs_format.c",
+    "f2fs_format_main.c",
+    "f2fs_format_utils.c",
   ]
 
   include_dirs = [
     ".",
     "//third_party/e2fsprogs/lib/uuid",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0/include",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib",
+    "//third_party/f2fs-tools",
+    "//third_party/f2fs-tools/include",
+    "//third_party/f2fs-tools/lib",
   ]
 
   deps = [
     "//third_party/e2fsprogs/lib/uuid:libext2_uuid",
-    "//third_party/e2fsprogs/f2fs-tools-1.14.0/lib:libf2fs",
-  ]
-  
-  defines = [
-    "HAVE_CONFIG_H",
+    "//third_party/f2fs-tools/lib:libf2fs",
   ]
 
+  defines = [ "HAVE_CONFIG_H" ]
+
   install_enable = true
-  subsystem_name = "storage_manager"
+  subsystem_name = "filemanagement"
   part_name = "storage_standard"
-  install_images = [
-    "system",
-  ]
+  install_images = [ "system" ]
 }
