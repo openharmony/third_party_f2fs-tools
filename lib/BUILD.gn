@@ -1,11 +1,11 @@
 # Copyright (c) 2021 Huawei Device Co., Ltd.
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2 as
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
-config("e2fsprogs-defaults") {
+config("f2fs-defaults") {
   cflags = [
     "-Wall",
     "-Werror",
@@ -16,33 +16,31 @@ config("e2fsprogs-defaults") {
   ]
 }
 config("libf2fs-headers") {
-  include_dirs = [ 
-      ".",
-      "//third_party/e2fsprogs/f2fs-tools-1.14.0",
-      "//third_party/e2fsprogs/f2fs-tools-1.14.0/include",
-    ]
+  include_dirs = [
+    ".",
+    "//third_party/f2fs-tools",
+    "//third_party/f2fs-tools/include",
+  ]
 }
 
 ohos_shared_library("libf2fs") {
   sources = [
+    "libf2fs.c",
     "libf2fs_io.c",
     "libf2fs_zoned.c",
-    "libf2fs.c",
     "nls_utf8.c",
   ]
-  
+
   include_dirs = [ "." ]
 
   configs = [
-    ":e2fsprogs-defaults",
+    ":f2fs-defaults",
     ":libf2fs-headers",
   ]
 
   defines = [ "HAVE_CONFIG_H" ]
   install_enable = true
-  subsystem_name = "storage_manager"
+  subsystem_name = "filemanagement"
   part_name = "storage_standard"
-  install_images = [
-    "system",
-  ]
+  install_images = [ "system" ]
 }
