@@ -41,6 +41,6 @@ ohos_shared_library("libf2fs") {
   defines = [ "HAVE_CONFIG_H" ]
   install_enable = true
   subsystem_name = "filemanagement"
-  part_name = "storage_standard"
+  part_name = "storage_service"
   install_images = [ "system" ]
 }
