@@ -50,40 +50,21 @@
         <licensefile>COPYING</licensefile>
         <policylist>
             <policy name="projectPolicy" desc="">
-                <policyitem type="license" name="GPL-2.0-or-later" path="tools/sg_write_buffer/sg_pt_linux_nvme.c" desc=""/>
-                <policyitem type="license" name="BSD-2-Clause" path="tools/sg_write_buffer/include/freebsd_nvme_ioctl.h" desc=""/>
-                <policyitem type="license" name="BSDStyleLicense" path="tools/sg_write_buffer/*.*" desc=""/>
-                <policyitem type="license" name="BSDStyleLicense" path="tools/sg_write_buffer/include/*.*" desc=""/>
-                <policyitem type="license" name="GPL-2.0+" path="tools/sha512.c" desc=""/>
-                <policyitem type="license" name="GPLStyleLicense" path="/*.*" desc=""/>
-                <policyitem type="copyright" name="Jaegeuk Kim" path="/*.*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Jaegeuk Kim"/>
-                <policyitem type="copyright" name="Douglas Gilbert." path="tools/sg_write_buffer/*.*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Douglas Gilbert."/>
-                <policyitem type="copyright" name="Samsung Electronics Co., Ltd." path="/*.*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Samsung Electronics Co., Ltd."/>
-                <policyitem type="copyright" name="Motorola Mobility" path="tools/f2fs_io_parse.c" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Motorola Mobility"/>
-                <policyitem type="copyright" name="Eric Youngdale" path="tools/sg_write_buffer/sg_lib.c" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Eric Youngdale"/>
-                <policyitem type="copyright" name="Google Inc." path="/*.*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Eric Youngdale"/>
-                <policyitem type="copyright" name="Huawei Ltd." path="/*.*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Huawei Ltd."/>
-                <policyitem type="copyright" name="Kaz Kylheku" path="fsck/dict.*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Kaz Kylheku"/>
-                <policyitem type="copyright" name="Western Digital Corporation." path="lib/libf2fs_zoned.c" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Western Digital Corporation."/>
-                <policyitem type="copyright" name="SGI." path="lib/nls_utf8.c" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="free software"/>
-                <policyitem type="copyright" name="Sam Hocevar" path="tools/sha512.c" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Sam Hocevar"/>
-                <policyitem type="copyright" name="Intel Corporation" path="tools/sg_write_buffer/include/freebsd_nvme_ioctl.h" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Intel Corporation"/>
+                <policyitem type="compatibility" name="BSDStyleLicense" path="*.*" rule="may" group="defaultGroup" filefilter="defaultPolicyFilter" desc="独立进程，独立使用"/>
+                <policyitem type="compatibility" name="GPLStyleLicense" path="*.*" rule="may" group="defaultGroup" filefilter="defaultPolicyFilter" desc="独立进程，独立使用"/>
+                <policyitem type="compatibility" name="LGPLStyleLicense" path="*.*" rule="may" group="defaultGroup" filefilter="defaultPolicyFilter" desc="独立进程，独立使用"/>
+                <policyitem type="compatibility" name="GPL-2.0+" path="*.*" rule="may" group="defaultGroup" filefilter="defaultPolicyFilter" desc="独立进程，独立使用"/>
+                <policyitem type="compatibility" name="GPL-2.0-or-later" path=".*" rule="may" group="defaultGroup" filefilter="defaultPolicyFilter" desc="独立进程，独立使用"/>
+                <policyitem type="compatibility" name="LGPL-2.1+" path=".*" rule="may" group="defaultGroup" filefilter="defaultPolicyFilter" desc="独立进程，独立使用"/>
             </policy>
         </policylist>
 
         <filefilterlist>
             <filefilter name="defaultFilter" desc="Files not to check">
-                <filteritem type="filename" name="*.sh" desc="desc files"/>
-                <filteritem type="filename" name="VERSION|VERSIONING|Makefile.am" desc="Files not to check"/>
-                <filteritem type="filepath" name="log/.*" desc="log files"/>
-                <filteritem type="filename" name="COPYING" desc="许可证文件"/>
             </filefilter>
             <filefilter name="defaultPolicyFilter" desc="Filters for compatibility，license header policies">
             </filefilter>
             <filefilter name="copyrightPolicyFilter" desc="Filters for copyright header policies">
-                <filteritem type="filename" name="configure.ac|common.h" desc="NoCopyrightheader"/>
-                <filteritem type="filename" name="dqblk_v2.h|mkquota.c|android_config.h|quota.h|utf8data.h|f2fscrypt.*|f2fs_io.*|sg_pt_win32.h|f2fstat.c|fibmap.c|sg_cmds.h|sg_linux_inc.h" desc=""/>
-                <filteritem type="filepath" name="fsck/quotaio*.*" desc=""/>
             </filefilter>
             <filefilter name="licenseFileNamePolicyFilter" desc="Filters for LICENSE file policies">
             </filefilter>
