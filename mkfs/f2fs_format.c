@@ -10,11 +10,15 @@
 #define _LARGEFILE64_SOURCE
 #endif
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <f2fs_fs.h>
+
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -23,7 +27,6 @@
 #endif
 #include <time.h>
 
-#include "config.h"
 #ifdef HAVE_UUID_UUID_H
 #include <uuid/uuid.h>
 #endif
@@ -32,7 +35,6 @@
 #define uuid_generate(a)
 #endif
 
-#include "f2fs_fs.h"
 #include "quota.h"
 #include "f2fs_format_utils.h"
 
