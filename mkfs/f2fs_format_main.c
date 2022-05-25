@@ -24,7 +24,8 @@
 #include <errno.h>
 #include <getopt.h>
 
-#include "config.h"
+#include <f2fs_fs.h>
+
 #ifdef HAVE_LIBBLKID
 #include <blkid/blkid.h>
 #endif
@@ -32,7 +33,6 @@
 #include <uuid/uuid.h>
 #endif
 
-#include "f2fs_fs.h"
 #include "quota.h"
 #include "f2fs_format_utils.h"
 

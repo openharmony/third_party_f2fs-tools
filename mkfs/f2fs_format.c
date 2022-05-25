@@ -10,8 +10,6 @@
 #define _LARGEFILE64_SOURCE
 #endif
 
-#include "config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
