@@ -7,7 +7,7 @@
         "Owner"                 : "Jaegeuk Kim <jaegeuk@kernel.org>",
         "Upstream URL"          : "https://git.kernel.org/pub/scm/linux/kernel/git/jaegeuk/f2fs-tools.git/tag/?h=v1.14.0",
         "Description"           : "The f2fs-tools package contains the utilities for handling the f2fs file system."
-    }
+    },
     {
         "Name"                  : "f2fs-tools",
         "License"               : "GNU LGPL-2.1+",
