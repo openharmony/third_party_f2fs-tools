@@ -122,7 +122,8 @@ void resize_usage()
 	MSG(0, "[options]:\n");
 	MSG(0, "  -d debug level [default:0]\n");
 	MSG(0, "  -i extended node bitmap, node ratio is 20%% by default\n");
-	MSG(0, "  -s safe resize (Does not resize metadata)");
+	MSG(0, "  -o overprovision percentage [default:auto]\n");
+	MSG(0, "  -s safe resize (Does not resize metadata)\n");
 	MSG(0, "  -t target sectors [default: device size]\n");
 	MSG(0, "  -O feature1[,feature2,...] e.g. \"fsprojquota,fscasefold\"\n");
 	MSG(0, "  -C [encoding[:flag1,...]] Support casefolding with optional flags\n");
@@ -539,7 +540,7 @@ void f2fs_parse_options(int argc, char *argv[])
 #endif
 	} else if (!strcmp("resize.f2fs", prog)) {
 #ifdef WITH_RESIZE
-		const char *option_string = "d:fst:O:C:iV";
+		const char *option_string = "d:fst:O:C:io:V";
 		int val;
 		char *token;
 
@@ -592,6 +593,8 @@ void f2fs_parse_options(int argc, char *argv[])
 					MSG(0, "\tError: Unknown flag %s\n",token);
 				}
 				c.feature |= cpu_to_le32(F2FS_FEATURE_CASEFOLD);
+			case 'o':
+				c.new_overprovision = atof(optarg);
 				break;
 			case 'V':
 				show_version(prog);
