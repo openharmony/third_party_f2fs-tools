@@ -40,8 +40,8 @@ ohos_executable("mkfs.f2fs") {
   defines = [ "HAVE_CONFIG_H" ]
 
   install_enable = true
-  subsystem_name = "filemanagement"
-  part_name = "storage_service"
+  subsystem_name = "thirdparty"
+  part_name = "f2fs_tools"
   install_images = [
     "system",
     "updater",
