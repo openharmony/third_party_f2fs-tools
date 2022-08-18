@@ -61,8 +61,8 @@ ohos_executable("fsck.f2fs") {
   ]
 
   install_enable = true
-  subsystem_name = "filemanagement"
-  part_name = "storage_service"
+  subsystem_name = "thirdparty"
+  part_name = "f2fs_tools"
   install_images = [
     "system",
     "updater",
