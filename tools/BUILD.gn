@@ -32,8 +32,8 @@ ohos_executable("f2fscrypt") {
   deps = [ "//third_party/e2fsprogs/lib/uuid:libext2_uuid" ]
 
   install_enable = true
-  subsystem_name = "filemanagement"
-  part_name = "storage_service"
+  subsystem_name = "thirdparty"
+  part_name = "f2fs_tools"
   install_images = [ "system" ]
 }
 
@@ -53,8 +53,8 @@ ohos_executable("f2fstat") {
   deps = []
 
   install_enable = true
-  subsystem_name = "filemanagement"
-  part_name = "storage_service"
+  subsystem_name = "thirdparty"
+  part_name = "f2fs_tools"
   install_images = [ "system" ]
 }
 
@@ -82,7 +82,7 @@ ohos_executable("fibmap.f2fs") {
   defines = [ "HAVE_CONFIG_H" ]
 
   install_enable = true
-  subsystem_name = "filemanagement"
-  part_name = "storage_service"
+  subsystem_name = "thirdparty"
+  part_name = "f2fs_tools"
   install_images = [ "system" ]
 }
