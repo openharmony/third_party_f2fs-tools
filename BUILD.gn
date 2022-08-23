@@ -9,9 +9,14 @@ import("//build/ohos.gni")
 group("f2fs-tools") {
   deps = [
     "//third_party/f2fs-tools/fsck:fsck.f2fs",
-    "//third_party/f2fs-tools/fsck:fsck.f2fs($host_toolchain)",
     "//third_party/f2fs-tools/lib:libf2fs",
     "//third_party/f2fs-tools/mkfs:mkfs.f2fs",
+  ]
+}
+
+group("f2fs-tools_host_toolchain") {
+  deps = [
+    "//third_party/f2fs-tools/fsck:fsck.f2fs($host_toolchain)",
     "//third_party/f2fs-tools/mkfs:mkfs.f2fs($host_toolchain)",
   ]
 }
