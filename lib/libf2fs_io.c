@@ -521,9 +521,6 @@ int dev_read(void *buf, __u64 offset, size_t len)
 	int fd;
 	int err;
 
-	if (c.max_size < (offset + len))
-		c.max_size = offset + len;
-
 	if (c.sparse_mode)
 		return sparse_read_blk(offset / F2FS_BLKSIZE,
 					len / F2FS_BLKSIZE, buf);
@@ -563,9 +560,6 @@ int dev_write(void *buf, __u64 offset, size_t len)
 {
 	int fd;
 
-	if (c.max_size < (offset + len))
-		c.max_size = offset + len;
-
 	if (c.dry_run)
 		return 0;
 
@@ -603,9 +597,6 @@ int dev_write_dump(void *buf, __u64 offset, size_t len)
 int dev_fill(void *buf, __u64 offset, size_t len)
 {
 	int fd;
-
-	if (c.max_size < (offset + len))
-		c.max_size = offset + len;
 
 	if (c.sparse_mode)
 		return sparse_write_zeroed_blk(offset / F2FS_BLKSIZE,
