@@ -11,27 +11,27 @@
 
 static int get_new_sb(struct f2fs_super_block *sb)
 {
-	u_int32_t zone_size_bytes;
-	u_int64_t zone_align_start_offset;
-	u_int32_t blocks_for_sit, blocks_for_nat, blocks_for_ssa;
-	u_int32_t sit_segments, nat_segments, diff, total_meta_segments;
-	u_int32_t total_valid_blks_available;
-	u_int32_t sit_bitmap_size, max_sit_bitmap_size;
-	u_int32_t max_nat_bitmap_size, max_nat_segments;
-	u_int32_t segment_size_bytes = 1 << (get_sb(log_blocksize) +
+	uint32_t zone_size_bytes;
+	uint64_t zone_align_start_offset;
+	uint32_t blocks_for_sit, blocks_for_nat, blocks_for_ssa;
+	uint32_t sit_segments, nat_segments, diff, total_meta_segments;
+	uint32_t total_valid_blks_available;
+	uint32_t sit_bitmap_size, max_sit_bitmap_size;
+	uint32_t max_nat_bitmap_size, max_nat_segments;
+	uint32_t segment_size_bytes = 1 << (get_sb(log_blocksize) +
 					get_sb(log_blocks_per_seg));
-	u_int32_t blks_per_seg = 1 << get_sb(log_blocks_per_seg);
-	u_int32_t segs_per_zone = get_sb(segs_per_sec) * get_sb(secs_per_zone);
+	uint32_t blks_per_seg = 1 << get_sb(log_blocks_per_seg);
+	uint32_t segs_per_zone = get_sb(segs_per_sec) * get_sb(secs_per_zone);
 
 	set_sb(block_count, c.target_sectors >>
 				get_sb(log_sectors_per_block));
 
 	zone_size_bytes = segment_size_bytes * segs_per_zone;
 	zone_align_start_offset =
-		((u_int64_t) c.start_sector * DEFAULT_SECTOR_SIZE +
+		((uint64_t) c.start_sector * DEFAULT_SECTOR_SIZE +
 		2 * F2FS_BLKSIZE + zone_size_bytes - 1) /
 		zone_size_bytes * zone_size_bytes -
-		(u_int64_t) c.start_sector * DEFAULT_SECTOR_SIZE;
+		(uint64_t) c.start_sector * DEFAULT_SECTOR_SIZE;
 
 	set_sb(segment_count, (c.target_sectors * c.sector_size -
 				zone_align_start_offset) / segment_size_bytes /
@@ -76,7 +76,7 @@ static int get_new_sb(struct f2fs_super_block *sb)
 		/* use cp_payload if free space of f2fs_checkpoint is not enough */
 		if (max_sit_bitmap_size + max_nat_bitmap_size >
 						MAX_BITMAP_SIZE_IN_CKPT) {
-			u_int32_t diff =  max_sit_bitmap_size +
+			uint32_t diff =  max_sit_bitmap_size +
 						max_nat_bitmap_size -
 						MAX_BITMAP_SIZE_IN_CKPT;
 			set_sb(cp_payload, F2FS_BLK_ALIGN(diff));
@@ -383,6 +383,7 @@ static void migrate_nat(struct f2fs_sb_info *sbi,
 		ASSERT(ret >= 0);
 		DBG(3, "Write NAT: %lx\n", block_addr);
 	}
+	free(nat_block);
 	DBG(0, "Info: Done to migrate NAT blocks: nat_blkaddr = 0x%x -> 0x%x\n",
 			old_nat_blkaddr, new_nat_blkaddr);
 }
@@ -456,7 +457,7 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 	block_t new_cp_blks = 1 + get_newsb(cp_payload);
 	block_t orphan_blks = 0;
 	block_t new_cp_blk_no, old_cp_blk_no;
-	u_int32_t crc = 0;
+	uint32_t crc = 0;
 	u32 flags;
 	void *buf;
 	int i, ret;
@@ -526,6 +527,11 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 
 	memcpy(new_cp, cp, (unsigned char *)cp->sit_nat_version_bitmap -
 						(unsigned char *)cp);
+	if (c.safe_resize)
+		memcpy((void *)new_cp + CP_BITMAP_OFFSET,
+			(void *)cp + CP_BITMAP_OFFSET,
+			F2FS_BLKSIZE - CP_BITMAP_OFFSET);
+
 	new_cp->checkpoint_ver = cpu_to_le64(cp_ver + 1);
 
 	crc = f2fs_checkpoint_chksum(new_cp);
@@ -645,8 +651,11 @@ static int f2fs_resize_shrink(struct f2fs_sb_info *sbi)
 	struct f2fs_super_block *sb = F2FS_RAW_SUPER(sbi);
 	struct f2fs_super_block new_sb_raw;
 	struct f2fs_super_block *new_sb = &new_sb_raw;
+	struct f2fs_checkpoint *cp = F2FS_CKPT(sbi);
 	block_t old_end_blkaddr, old_main_blkaddr;
 	block_t new_end_blkaddr, new_main_blkaddr, tmp_end_blkaddr;
+	block_t user_block_count;
+	unsigned int overprov_segment_count;
 	unsigned int offset;
 	int err = -1;
 
@@ -655,6 +664,17 @@ static int f2fs_resize_shrink(struct f2fs_sb_info *sbi)
 
 	memcpy(new_sb, F2FS_RAW_SUPER(sbi), sizeof(*new_sb));
 	if (get_new_sb(new_sb))
+		return -1;
+
+	overprov_segment_count = (get_newsb(segment_count_main) -
+			c.new_reserved_segments) *
+			c.new_overprovision / 100;
+	overprov_segment_count += c.new_reserved_segments;
+
+	user_block_count = (get_newsb(segment_count_main) -
+			overprov_segment_count) * c.blks_per_seg;
+
+	if (get_cp(valid_block_count) > user_block_count)
 		return -1;
 
 	/* check nat availability */
@@ -714,8 +734,9 @@ int f2fs_resize(struct f2fs_sb_info *sbi)
 		} else {
 			return f2fs_resize_shrink(sbi);
 		}
-	else if ((c.target_sectors * c.sector_size >>
-			get_sb(log_blocksize)) > get_sb(block_count))
+	else if (((c.target_sectors * c.sector_size >>
+			get_sb(log_blocksize)) > get_sb(block_count)) ||
+			c.force)
 		return f2fs_resize_grow(sbi);
 	else {
 		MSG(0, "Nothing to resize.\n");

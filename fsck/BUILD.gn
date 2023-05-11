@@ -22,6 +22,7 @@ config("f2fs-defaults") {
 ohos_executable("fsck.f2fs") {
   configs = [ ":f2fs-defaults" ]
   sources = [
+    "compress.c",
     "defrag.c",
     "dict.c",
     "dir.c",

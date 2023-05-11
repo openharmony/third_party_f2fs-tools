@@ -30,9 +30,10 @@ typedef void (*fs_config_f)(const char *path, int dir,
 			    unsigned *uid, unsigned *gid,
 			    unsigned *mode, uint64_t *capabilities);
 
+#ifndef _WIN32
 static fs_config_f fs_config_func = NULL;
 
-#ifdef WITH_ANDROID
+#ifdef HAVE_SELINUX_ANDROID_H
 #include <selinux/android.h>
 #include <private/android_filesystem_config.h>
 #include <private/canned_fs_config.h>
@@ -64,6 +65,7 @@ static int f2fs_make_directory(struct f2fs_sb_info *sbi,
 
 	return ret;
 }
+#endif
 
 #ifdef HAVE_LIBSELINUX
 static int set_selinux_xattr(struct f2fs_sb_info *sbi, const char *path,
@@ -101,6 +103,7 @@ static int set_selinux_xattr(struct f2fs_sb_info *sbi, const char *path,
 #define set_selinux_xattr(...)	0
 #endif
 
+#ifndef _WIN32
 static int set_perms_and_caps(struct dentry *de)
 {
 	uint64_t capabilities = 0;
@@ -150,6 +153,15 @@ static void set_inode_metadata(struct dentry *de)
 	}
 
 	if (S_ISREG(stat.st_mode)) {
+		if (stat.st_nlink > 1) {
+			/*
+			 * This file might have multiple links to it, so remember
+			 * device and inode.
+			 */
+			de->from_devino = stat.st_dev;
+			de->from_devino <<= 32;
+			de->from_devino |= stat.st_ino;
+		}
 		de->file_type = F2FS_FT_REG_FILE;
 	} else if (S_ISDIR(stat.st_mode)) {
 		de->file_type = F2FS_FT_DIR;
@@ -179,6 +191,11 @@ static void set_inode_metadata(struct dentry *de)
 		de->mtime = stat.st_mtime;
 	else
 		de->mtime = c.fixed_time;
+
+	if (c.preserve_perms) {
+		de->uid = stat.st_uid;
+		de->gid = stat.st_gid;
+	}
 
 	set_perms_and_caps(de);
 }
@@ -279,6 +296,14 @@ out_free:
 	free(dentries);
 	return 0;
 }
+#else
+static int build_directory(struct f2fs_sb_info *sbi, const char *full_path,
+			const char *dir_path, const char *target_out_dir,
+			nid_t dir_ino)
+{
+	return -1;
+}
+#endif
 
 static int configure_files(void)
 {
@@ -301,7 +326,7 @@ static int configure_files(void)
 #endif
 skip:
 #endif
-#ifdef WITH_ANDROID
+#ifdef HAVE_SELINUX_ANDROID_H
 	/* Load the FS config */
 	if (c.fs_config_file) {
 		int ret = load_canned_fs_config(c.fs_config_file);
@@ -334,6 +359,9 @@ int f2fs_sload(struct f2fs_sb_info *sbi)
 
 	/* flush NAT/SIT journal entries */
 	flush_journal_entries(sbi);
+
+	/* initialize empty hardlink cache */
+	sbi->hardlink_cache = 0;
 
 	ret = build_directory(sbi, c.from_dir, "/",
 					c.target_out_dir, F2FS_ROOT_INO(sbi));

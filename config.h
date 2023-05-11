@@ -18,10 +18,10 @@
 #define F2FS_MINOR_VERSION 14
 
 /* f2fs-tools date based on Source releases */
-#define F2FS_TOOLS_DATE "2020-08-24"
+#define F2FS_TOOLS_DATE "2022-05-13"
 
 /* f2fs-tools version */
-#define F2FS_TOOLS_VERSION "1.14.0"
+#define F2FS_TOOLS_VERSION "1.15.0"
 
 /* Define to 1 if you have the `add_key' function. */
 /* #undef HAVE_ADD_KEY */
@@ -181,7 +181,7 @@
 #define PACKAGE_NAME "F2FS tools"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "F2FS tools 1.14.0"
+#define PACKAGE_STRING "F2FS tools 1.15.0"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "f2fs-tools"
@@ -190,13 +190,13 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.14.0"
+#define PACKAGE_VERSION "1.15.0"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "1.14.0"
+#define VERSION "1.15.0"
 
 /* Define to `__inline__' or `__inline' if that's what the C compiler
    calls it, or to nothing if 'inline' is not supported under any name.  */

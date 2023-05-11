@@ -5,6 +5,9 @@
  *             http://www.samsung.com/
  * Copyright (c) 2019 Google Inc.
  *             http://www.google.com/
+ * Copyright (c) 2020 Google Inc.
+ *   Robin Hsu <robinhsu@google.com>
+ *  : add quick-buffer for sload compression support
  *
  * Dual licensed under the GPL or LGPL version 2 licenses.
  */
@@ -22,9 +25,13 @@
 #include <mntent.h>
 #endif
 #include <time.h>
-#ifndef ANDROID_WINDOWS_HOST
+#ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
+#endif
+#ifdef HAVE_SYS_MOUNT_H
 #include <sys/mount.h>
+#endif
+#ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
 #ifdef HAVE_LINUX_HDREG_H
@@ -38,11 +45,11 @@
 
 struct f2fs_configuration c;
 
-#ifdef WITH_ANDROID
+#ifdef HAVE_SPARSE_SPARSE_H
 #include <sparse/sparse.h>
 struct sparse_file *f2fs_sparse_file;
 static char **blocks;
-u_int64_t blocks_count;
+uint64_t blocks_count;
 static char *zeroed_block;
 #endif
 
@@ -397,7 +404,7 @@ int dev_read_version(void *buf, __u64 offset, size_t len)
 	return 0;
 }
 
-#ifdef WITH_ANDROID
+#ifdef HAVE_SPARSE_SPARSE_H
 static int sparse_read_blk(__u64 block, int count, void *buf)
 {
 	int i;
@@ -496,15 +503,31 @@ static int sparse_merge_blocks(uint64_t start, uint64_t num, int zero)
 					F2FS_BLKSIZE * num, start);
 }
 #else
-static int sparse_read_blk(__u64 block, int count, void *buf) { return 0; }
-static int sparse_write_blk(__u64 block, int count, const void *buf) { return 0; }
-static int sparse_write_zeroed_blk(__u64 block, int count) { return 0; }
+static int sparse_read_blk(__u64 UNUSED(block),
+				int UNUSED(count), void *UNUSED(buf))
+{
+	return 0;
+}
+
+static int sparse_write_blk(__u64 UNUSED(block),
+				int UNUSED(count), const void *UNUSED(buf))
+{
+	return 0;
+}
+
+static int sparse_write_zeroed_blk(__u64 UNUSED(block), int UNUSED(count))
+{
+	return 0;
+}
 #endif
 
 int dev_read(void *buf, __u64 offset, size_t len)
 {
 	int fd;
 	int err;
+
+	if (c.max_size < (offset + len))
+		c.max_size = offset + len;
 
 	if (c.sparse_mode)
 		return sparse_read_blk(offset / F2FS_BLKSIZE,
@@ -546,6 +569,9 @@ int dev_readahead(__u64 offset, size_t UNUSED(len))
 int dev_write(void *buf, __u64 offset, size_t len)
 {
 	int fd;
+
+	if (c.max_size < (offset + len))
+		c.max_size = offset + len;
 
 	if (c.dry_run)
 		return 0;
@@ -589,6 +615,9 @@ int dev_fill(void *buf, __u64 offset, size_t len)
 {
 	int fd;
 
+	if (c.max_size < (offset + len))
+		c.max_size = offset + len;
+
 	if (c.sparse_mode)
 		return sparse_write_zeroed_blk(offset / F2FS_BLKSIZE,
 						len / F2FS_BLKSIZE);
@@ -624,7 +653,7 @@ int dev_reada_block(__u64 blk_addr)
 
 int f2fs_fsync_device(void)
 {
-#ifndef ANDROID_WINDOWS_HOST
+#ifdef HAVE_FSYNC
 	int i;
 
 	for (i = 0; i < c.ndevs; i++) {
@@ -639,7 +668,7 @@ int f2fs_fsync_device(void)
 
 int f2fs_init_sparse_file(void)
 {
-#ifdef WITH_ANDROID
+#ifdef HAVE_SPARSE_SPARSE_H
 	if (c.func == MKFS) {
 		f2fs_sparse_file = sparse_file_new(F2FS_BLKSIZE, c.device_size);
 		if (!f2fs_sparse_file)
@@ -651,7 +680,7 @@ int f2fs_init_sparse_file(void)
 			return -1;
 
 		c.device_size = sparse_file_len(f2fs_sparse_file, 0, 0);
-		c.device_size &= (~((u_int64_t)(F2FS_BLKSIZE - 1)));
+		c.device_size &= (~((uint64_t)(F2FS_BLKSIZE - 1)));
 	}
 
 	if (sparse_file_block_size(f2fs_sparse_file) != F2FS_BLKSIZE) {
@@ -681,7 +710,7 @@ int f2fs_init_sparse_file(void)
 
 void f2fs_release_sparse_resource(void)
 {
-#ifdef WITH_ANDROID
+#ifdef HAVE_SPARSE_SPARSE_H
 	int j;
 
 	if (c.sparse_mode) {
@@ -706,7 +735,7 @@ int f2fs_finalize_device(void)
 	int i;
 	int ret = 0;
 
-#ifdef WITH_ANDROID
+#ifdef HAVE_SPARSE_SPARSE_H
 	if (c.sparse_mode) {
 		int64_t chunk_start = (blocks[0] == NULL) ? -1 : 0;
 		uint64_t j;
@@ -773,7 +802,7 @@ int f2fs_finalize_device(void)
 	 * in the block device page cache.
 	 */
 	for (i = 0; i < c.ndevs; i++) {
-#ifndef ANDROID_WINDOWS_HOST
+#ifdef HAVE_FSYNC
 		ret = fsync(c.devices[i].fd);
 		if (ret < 0) {
 			MSG(0, "\tError: Could not conduct fsync!!!\n");
