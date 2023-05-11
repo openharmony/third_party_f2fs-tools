@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
@@ -26,8 +27,12 @@
 #include <mach/mach_time.h>
 #endif
 #include <sys/stat.h>
+#ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
+#endif
+#ifdef HAVE_SYS_MOUNT_H
 #include <sys/mount.h>
+#endif
 #include <assert.h>
 
 #include "f2fs_fs.h"
@@ -37,7 +42,6 @@
 		typecheck(unsigned long long, b) &&                     \
 		((long long)((a) - (b)) > 0))
 
-#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #define container_of(ptr, type, member) ({			\
 	const typeof(((type *)0)->member) * __mptr = (ptr);	\
 	(type *)((char *)__mptr - offsetof(type, member)); })
@@ -221,6 +225,7 @@ struct dentry {
 	uint64_t capabilities;
 	nid_t ino;
 	nid_t pino;
+	u64 from_devino;
 };
 
 /* different from dnode_of_data in kernel */
@@ -232,6 +237,12 @@ struct dnode_of_data {
 	block_t data_blkaddr;
 	block_t node_blkaddr;
 	int idirty, ndirty;
+};
+
+struct hardlink_cache_entry {
+	u64 from_devino;
+	nid_t to_ino;
+	int nbuild;
 };
 
 struct f2fs_sb_info {
@@ -276,6 +287,9 @@ struct f2fs_sb_info {
 
 	/* true if late_build_segment_manger() is called */
 	bool seg_manager_done;
+
+	/* keep track of hardlinks so we can recreate them */
+	void *hardlink_cache;
 };
 
 static inline struct f2fs_super_block *F2FS_RAW_SUPER(struct f2fs_sb_info *sbi)
@@ -371,7 +385,7 @@ static inline void *__bitmap_ptr(struct f2fs_sb_info *sbi, int flag)
 					CP_MIN_CHKSUM_OFFSET)
 			chksum_size = sizeof(__le32);
 
-		return &ckpt->sit_nat_version_bitmap + offset + chksum_size;
+		return &ckpt->sit_nat_version_bitmap[offset + chksum_size];
 	}
 
 	if (le32_to_cpu(F2FS_RAW_SUPER(sbi)->cp_payload) > 0) {
@@ -382,7 +396,7 @@ static inline void *__bitmap_ptr(struct f2fs_sb_info *sbi, int flag)
 	} else {
 		offset = (flag == NAT_BITMAP) ?
 			le32_to_cpu(ckpt->sit_ver_bitmap_bytesize) : 0;
-		return &ckpt->sit_nat_version_bitmap + offset;
+		return &ckpt->sit_nat_version_bitmap[offset];
 	}
 }
 
@@ -517,6 +531,14 @@ static inline bool IS_VALID_BLK_ADDR(struct f2fs_sb_info *sbi, u32 addr)
 	return 1;
 }
 
+static inline bool is_valid_data_blkaddr(block_t blkaddr)
+{
+	if (blkaddr == NEW_ADDR || blkaddr == NULL_ADDR ||
+				blkaddr == COMPRESS_ADDR)
+		return 0;
+	return 1;
+}
+
 static inline int IS_CUR_SEGNO(struct f2fs_sb_info *sbi, u32 segno)
 {
 	int i;
@@ -571,8 +593,12 @@ static unsigned char f2fs_type_by_mode[S_IFMT >> S_SHIFT] = {
 	[S_IFCHR >> S_SHIFT]    = F2FS_FT_CHRDEV,
 	[S_IFBLK >> S_SHIFT]    = F2FS_FT_BLKDEV,
 	[S_IFIFO >> S_SHIFT]    = F2FS_FT_FIFO,
+#ifdef S_IFSOCK
 	[S_IFSOCK >> S_SHIFT]   = F2FS_FT_SOCK,
+#endif
+#ifdef S_IFLNK
 	[S_IFLNK >> S_SHIFT]    = F2FS_FT_SYMLINK,
+#endif
 };
 
 static inline int map_de_type(umode_t mode)

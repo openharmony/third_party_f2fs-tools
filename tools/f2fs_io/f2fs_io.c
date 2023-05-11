@@ -18,18 +18,21 @@
 #ifndef O_LARGEFILE
 #define O_LARGEFILE 0
 #endif
+#ifndef __SANE_USERSPACE_TYPES__
+#define __SANE_USERSPACE_TYPES__       /* For PPC64, to get LL64 types */
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <linux/fs.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/sendfile.h>
@@ -42,6 +45,8 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
+#include <android_config.h>
+
 #include "f2fs_io.h"
 
 struct cmd_desc {
@@ -130,22 +135,23 @@ static void full_write(int fd, const void *buf, size_t count)
 	}
 }
 
-#if defined(__APPLE__)
+#ifdef HAVE_MACH_TIME_H
 static u64 get_current_us()
 {
-#ifdef HAVE_MACH_TIME_H
 	return mach_absolute_time() / 1000;
-#else
-	return 0;
-#endif
 }
-#else
+#elif defined(HAVE_CLOCK_GETTIME) && defined(HAVE_CLOCK_BOOTTIME)
 static u64 get_current_us()
 {
 	struct timespec t;
 	t.tv_sec = t.tv_nsec = 0;
 	clock_gettime(CLOCK_BOOTTIME, &t);
 	return (u64)t.tv_sec * 1000000LL + t.tv_nsec / 1000;
+}
+#else
+static u64 get_current_us()
+{
+	return 0;
 }
 #endif
 
@@ -211,7 +217,8 @@ static void do_set_verity(int argc, char **argv, const struct cmd_desc *cmd)
 "  verity\n"							\
 "  casefold\n"							\
 "  compression\n"						\
-"  nocompression\n"
+"  nocompression\n"						\
+"  immutable\n"
 
 static void do_getflags(int argc, char **argv, const struct cmd_desc *cmd)
 {
@@ -269,6 +276,12 @@ static void do_getflags(int argc, char **argv, const struct cmd_desc *cmd)
 		printf("nocow(pinned)");
 		exist = 1;
 	}
+	if (flag & FS_IMMUTABLE_FL) {
+		if (exist)
+			printf(",");
+		printf("immutable");
+		exist = 1;
+	}
 	if (!exist)
 		printf("none");
 	printf("\n");
@@ -282,7 +295,8 @@ static void do_getflags(int argc, char **argv, const struct cmd_desc *cmd)
 "flag can be\n"							\
 "  casefold\n"							\
 "  compression\n"						\
-"  nocompression\n"
+"  nocompression\n"						\
+"  noimmutable\n"
 
 static void do_setflags(int argc, char **argv, const struct cmd_desc *cmd)
 {
@@ -308,6 +322,8 @@ static void do_setflags(int argc, char **argv, const struct cmd_desc *cmd)
 		flag |= FS_COMPR_FL;
 	else if (!strcmp(argv[1], "nocompression"))
 		flag |= FS_NOCOMP_FL;
+	else if (!strcmp(argv[1], "noimmutable"))
+		flag &= ~FS_IMMUTABLE_FL;
 
 	ret = ioctl(fd, F2FS_IOC_SETFLAGS, &flag);
 	printf("set a flag on %s ret=%d, flags=%s\n", argv[2], ret, argv[1]);
@@ -432,32 +448,87 @@ static void do_fallocate(int argc, char **argv, const struct cmd_desc *cmd)
 	exit(0);
 }
 
+#define erase_desc "erase a block device"
+#define erase_help				\
+"f2fs_io erase [block_device_path]\n\n"		\
+"Send DISCARD | BLKSECDISCARD comamnd to"	\
+"block device in block_device_path\n"		\
+
+static void do_erase(int argc, char **argv, const struct cmd_desc *cmd)
+{
+	int fd, ret;
+	struct stat st;
+	u64 range[2];
+
+	if (argc != 2) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	if (stat(argv[1], &st) != 0) {
+		fputs("stat error\n", stderr);
+		exit(1);
+	}
+
+	if (!S_ISBLK(st.st_mode)) {
+		fputs(argv[1], stderr);
+		fputs(" is not a block device\n", stderr);
+		exit(1);
+	}
+
+	fd = xopen(argv[1], O_WRONLY, 0);
+
+	range[0] = 0;
+	ret = ioctl(fd, BLKGETSIZE64, &range[1]);
+	if (ret < 0) {
+		fputs("get size failed\n", stderr);
+		exit(1);
+	}
+
+	ret = ioctl(fd, BLKSECDISCARD, &range);
+	if (ret < 0) {
+		ret = ioctl(fd, BLKDISCARD, &range);
+		if (ret < 0) {
+			fputs("Discard failed\n", stderr);
+			exit(1);
+		}
+	}
+
+	exit(0);
+}
+
 #define write_desc "write data into file"
 #define write_help					\
-"f2fs_io write [chunk_size in 4kb] [offset in chunk_size] [count] [pattern] [IO] [file_path]\n\n"	\
+"f2fs_io write [chunk_size in 4kb] [offset in chunk_size] [count] [pattern] [IO] [file_path] {delay}\n\n"	\
 "Write given patten data in file_path\n"		\
 "pattern can be\n"					\
-"  zero     : zeros\n"					\
-"  inc_num  : incrementing numbers\n"			\
-"  rand     : random numbers\n"				\
+"  zero          : zeros\n"				\
+"  inc_num       : incrementing numbers\n"		\
+"  rand          : random numbers\n"			\
 "IO can be\n"						\
-"  buffered : buffered IO\n"				\
-"  dio      : direct IO\n"				\
-"  osync    : O_SYNC\n"					\
+"  buffered      : buffered IO\n"			\
+"  dio           : direct IO\n"				\
+"  osync         : O_SYNC\n"				\
+"  atomic_commit : atomic write & commit\n"		\
+"  atomic_abort  : atomic write & abort\n"		\
+"{delay} is in ms unit and optional only for atomic_commit and atomic_abort\n"
 
 static void do_write(int argc, char **argv, const struct cmd_desc *cmd)
 {
-	u64 buf_size = 0, inc_num = 0, ret = 0, written = 0;
+	u64 buf_size = 0, inc_num = 0, written = 0;
 	u64 offset;
 	char *buf = NULL;
 	unsigned bs, count, i;
 	int flags = 0;
 	int fd;
 	u64 total_time = 0, max_time = 0, max_time_t = 0;
+	bool atomic_commit = false, atomic_abort = false;
+	int useconds = 0;
 
 	srand(time(0));
 
-	if (argc != 7) {
+	if (argc < 7 || argc > 8) {
 		fputs("Excess arguments\n\n", stderr);
 		fputs(cmd->cmd_help, stderr);
 		exit(1);
@@ -483,13 +554,32 @@ static void do_write(int argc, char **argv, const struct cmd_desc *cmd)
 		flags |= O_DIRECT;
 	else if (!strcmp(argv[5], "osync"))
 		flags |= O_SYNC;
+	else if (!strcmp(argv[5], "atomic_commit"))
+		atomic_commit = true;
+	else if (!strcmp(argv[5], "atomic_abort"))
+		atomic_abort = true;
 	else if (strcmp(argv[5], "buffered"))
 		die("Wrong IO type");
 
 	fd = xopen(argv[6], O_CREAT | O_WRONLY | flags, 0755);
 
+	if (atomic_commit || atomic_abort) {
+		int ret;
+
+		if (argc == 8)
+			useconds = atoi(argv[7]) * 1000;
+
+		ret = ioctl(fd, F2FS_IOC_START_ATOMIC_WRITE);
+		if (ret < 0) {
+			fputs("setting atomic file mode failed\n", stderr);
+			exit(1);
+		}
+	}
+
 	total_time = get_current_us();
 	for (i = 0; i < count; i++) {
+		uint64_t ret;
+
 		if (!strcmp(argv[4], "inc_num"))
 			*(int *)buf = inc_num++;
 		else if (!strcmp(argv[4], "rand"))
@@ -504,6 +594,27 @@ static void do_write(int argc, char **argv, const struct cmd_desc *cmd)
 		if (ret != buf_size)
 			break;
 		written += ret;
+	}
+
+	if (useconds)
+		usleep(useconds);
+
+	if (atomic_commit) {
+		int ret;
+
+		ret = ioctl(fd, F2FS_IOC_COMMIT_ATOMIC_WRITE);
+		if (ret < 0) {
+			fputs("committing atomic write failed\n", stderr);
+			exit(1);
+		}
+	} else if (atomic_abort) {
+		int ret;
+
+		ret = ioctl(fd, F2FS_IOC_ABORT_VOLATILE_WRITE);
+		if (ret < 0) {
+			fputs("aborting atomic write failed\n", stderr);
+			exit(1);
+		}
 	}
 
 	printf("Written %"PRIu64" bytes with pattern=%s, total_time=%"PRIu64" us, max_latency=%"PRIu64" us\n",
@@ -662,27 +773,18 @@ static void do_randread(int argc, char **argv, const struct cmd_desc *cmd)
 	exit(0);
 }
 
-struct file_ext {
-	__u32 f_pos;
-	__u32 start_blk;
-	__u32 end_blk;
-	__u32 blk_count;
-};
-
-#ifndef FIBMAP
-#define FIBMAP          _IO(0x00, 1)    /* bmap access */
-#endif
-
 #define fiemap_desc "get block address in file"
 #define fiemap_help					\
 "f2fs_io fiemap [offset in 4kb] [count] [file_path]\n\n"\
 
+#if defined(HAVE_LINUX_FIEMAP_H) && defined(HAVE_LINUX_FS_H)
 static void do_fiemap(int argc, char **argv, const struct cmd_desc *cmd)
 {
-	u64 offset;
-	u32 blknum;
-	unsigned count, i;
-	int fd;
+	unsigned int i;
+	int fd, extents_mem_size;
+	u64 start, length;
+	u32 mapped_extents;
+	struct fiemap *fm = xmalloc(sizeof(struct fiemap));
 
 	if (argc != 4) {
 		fputs("Excess arguments\n\n", stderr);
@@ -690,23 +792,52 @@ static void do_fiemap(int argc, char **argv, const struct cmd_desc *cmd)
 		exit(1);
 	}
 
-	offset = atoi(argv[1]);
-	count = atoi(argv[2]);
+	memset(fm, 0, sizeof(struct fiemap));
+	start = atoi(argv[1]) * F2FS_BLKSIZE;
+	length = atoi(argv[2]) * F2FS_BLKSIZE;
+	fm->fm_start = start;
+	fm->fm_length = length;
 
 	fd = xopen(argv[3], O_RDONLY | O_LARGEFILE, 0);
 
-	printf("Fiemap: offset = %08"PRIx64" len = %d\n", offset, count);
-	for (i = 0; i < count; i++) {
-		blknum = offset + i;
+	printf("Fiemap: offset = %"PRIu64" len = %"PRIu64"\n",
+				start / F2FS_BLKSIZE, length / F2FS_BLKSIZE);
+	if (ioctl(fd, FS_IOC_FIEMAP, fm) < 0)
+		die_errno("FIEMAP failed");
 
-		if (ioctl(fd, FIBMAP, &blknum) < 0)
-			die_errno("FIBMAP failed");
+	mapped_extents = fm->fm_mapped_extents;
+	extents_mem_size = sizeof(struct fiemap_extent) * mapped_extents;
+	free(fm);
+	fm = xmalloc(sizeof(struct fiemap) + extents_mem_size);
 
-		printf("%u ", blknum);
+	memset(fm, 0, sizeof(struct fiemap) + extents_mem_size);
+	fm->fm_start = start;
+	fm->fm_length = length;
+	fm->fm_extent_count = mapped_extents;
+
+	if (ioctl(fd, FS_IOC_FIEMAP, fm) < 0)
+		die_errno("FIEMAP failed");
+
+	printf("\t%-17s%-17s%-17s%s\n", "logical addr.", "physical addr.", "length", "flags");
+	for (i = 0; i < fm->fm_mapped_extents; i++) {
+		printf("%d\t%.16llx %.16llx %.16llx %.8x\n", i,
+		    fm->fm_extents[i].fe_logical, fm->fm_extents[i].fe_physical,
+		    fm->fm_extents[i].fe_length, fm->fm_extents[i].fe_flags);
+
+		if (fm->fm_extents[i].fe_flags & FIEMAP_EXTENT_LAST)
+			break;
 	}
 	printf("\n");
+	free(fm);
 	exit(0);
 }
+#else
+static void do_fiemap(int UNUSED(argc), char **UNUSED(argv),
+			const struct cmd_desc *UNUSED(cmd))
+{
+	die("Not support for this platform");
+}
+#endif
 
 #define gc_urgent_desc "start/end/run gc_urgent for given time period"
 #define gc_urgent_help					\
@@ -935,6 +1066,206 @@ static void do_reserve_cblocks(int argc, char **argv, const struct cmd_desc *cmd
 	exit(0);
 }
 
+#define get_coption_desc "get compression option of a compressed file"
+#define get_coption_help						\
+"f2fs_io get_coption [file]\n\n"	\
+"  algorithm        : compression algorithm (0:lzo, 1: lz4, 2:zstd, 3:lzorle)\n"	\
+"  log_cluster_size : compression cluster log size (2 <= log_size <= 8)\n"
+
+static void do_get_coption(int argc, char **argv, const struct cmd_desc *cmd)
+{
+	struct f2fs_comp_option option;
+	int ret, fd;
+
+	if (argc != 2) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	fd = xopen(argv[1], O_RDONLY, 0);
+
+	ret = ioctl(fd, F2FS_IOC_GET_COMPRESS_OPTION, &option);
+	if (ret < 0)
+		die_errno("F2FS_IOC_GET_COMPRESS_OPTION failed");
+
+	printf("compression algorithm:%u\n", option.algorithm);
+	printf("compression cluster log size:%u\n", option.log_cluster_size);
+
+	exit(0);
+}
+
+#define set_coption_desc "set compression option of a compressed file"
+#define set_coption_help						\
+"f2fs_io set_coption [algorithm] [log_cluster_size] [file_path]\n\n"	\
+"  algorithm        : compression algorithm (0:lzo, 1: lz4, 2:zstd, 3:lzorle)\n"	\
+"  log_cluster_size : compression cluster log size (2 <= log_size <= 8)\n"
+
+static void do_set_coption(int argc, char **argv, const struct cmd_desc *cmd)
+{
+	struct f2fs_comp_option option;
+	int fd, ret;
+
+	if (argc != 4) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	option.algorithm = atoi(argv[1]);
+	option.log_cluster_size = atoi(argv[2]);
+
+	fd = xopen(argv[3], O_WRONLY, 0);
+
+	ret = ioctl(fd, F2FS_IOC_SET_COMPRESS_OPTION, &option);
+	if (ret < 0)
+		die_errno("F2FS_IOC_SET_COMPRESS_OPTION failed");
+
+	printf("set compression option: algorithm=%u, log_cluster_size=%u\n",
+			option.algorithm, option.log_cluster_size);
+	exit(0);
+}
+
+#define decompress_desc "decompress an already compressed file"
+#define decompress_help "f2fs_io decompress [file_path]\n\n"
+
+static void do_decompress(int argc, char **argv, const struct cmd_desc *cmd)
+{
+	int fd, ret;
+
+	if (argc != 2) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	fd = xopen(argv[1], O_WRONLY, 0);
+
+	ret = ioctl(fd, F2FS_IOC_DECOMPRESS_FILE);
+	if (ret < 0)
+		die_errno("F2FS_IOC_DECOMPRESS_FILE failed");
+
+	exit(0);
+}
+
+#define compress_desc "compress a compression enabled file"
+#define compress_help "f2fs_io compress [file_path]\n\n"
+
+static void do_compress(int argc, char **argv, const struct cmd_desc *cmd)
+{
+	int fd, ret;
+
+	if (argc != 2) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	fd = xopen(argv[1], O_WRONLY, 0);
+
+	ret = ioctl(fd, F2FS_IOC_COMPRESS_FILE);
+	if (ret < 0)
+		die_errno("F2FS_IOC_COMPRESS_FILE failed");
+
+	exit(0);
+}
+
+#define get_filename_encrypt_mode_desc "get file name encrypt mode"
+#define get_filename_encrypt_mode_help					\
+"f2fs_io filename_encrypt_mode [file or directory path]\n\n"		\
+"Get the file name encription mode of the given file/directory.\n"	\
+
+static void do_get_filename_encrypt_mode (int argc, char **argv,
+						const struct cmd_desc *cmd)
+{
+	static const char *enc_name[] = {
+		"invalid", /* FS_ENCRYPTION_MODE_INVALID (0) */
+		"aes-256-xts", /* FS_ENCRYPTION_MODE_AES_256_XTS (1) */
+		"aes-256-gcm", /* FS_ENCRYPTION_MODE_AES_256_GCM (2) */
+		"aes-256-cbc", /* FS_ENCRYPTION_MODE_AES_256_CBC (3) */
+		"aes-256-cts", /* FS_ENCRYPTION_MODE_AES_256_CTS (4) */
+		"aes-128-cbc", /* FS_ENCRYPTION_MODE_AES_128_CBC (5) */
+		"aes-128-cts", /* FS_ENCRYPTION_MODE_AES_128_CTS (6) */
+		"speck128-256-xts", /* FS_ENCRYPTION_MODE_SPECK128_256_XTS (7) */
+		"speck128-256-cts", /* FS_ENCRYPTION_MODE_SPECK128_256_CTS (8) */
+		"adiantum", /* FS_ENCRYPTION_MODE_ADIANTUM (9) */
+	};
+	int fd, mode, ret;
+	struct fscrypt_get_policy_ex_arg arg;
+
+	if (argc != 2) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	fd = xopen(argv[1], O_RDONLY, 0);
+	arg.policy_size = sizeof(arg.policy);
+	ret = ioctl(fd, FS_IOC_GET_ENCRYPTION_POLICY_EX, &arg);
+	if (ret != 0 && errno == ENOTTY)
+		ret = ioctl(fd, FS_IOC_GET_ENCRYPTION_POLICY, arg.policy.v1);
+	close(fd);
+
+	if (ret) {
+		perror("FS_IOC_GET_ENCRYPTION_POLICY|_EX");
+		exit(1);
+	}
+
+	switch (arg.policy.version) {
+	case FSCRYPT_POLICY_V1:
+		mode = arg.policy.v1.filenames_encryption_mode;
+		break;
+	case FSCRYPT_POLICY_V2:
+		mode = arg.policy.v2.filenames_encryption_mode;
+		break;
+	default:
+		printf("Do not support policy version: %d\n",
+							arg.policy.version);
+		exit(1);
+	}
+
+	if (mode >= sizeof(enc_name)/sizeof(enc_name[0])) {
+		printf("Do not support algorithm: %d\n", mode);
+		exit(1);
+	}
+	printf ("%s\n", enc_name[mode]);
+	exit(0);
+}
+
+#define rename_desc "rename source to target file with fsync option"
+#define rename_help							\
+"f2fs_io rename [src_path] [target_path] [fsync_after_rename]\n\n"	\
+"e.g., f2fs_io rename source dest 1\n"					\
+"      1. open(source)\n"						\
+"      2. rename(source, dest)\n"					\
+"      3. fsync(source)\n"						\
+"      4. close(source)\n"
+
+static void do_rename(int argc, char **argv, const struct cmd_desc *cmd)
+{
+	int fd = -1;
+	int ret;
+
+	if (argc != 4) {
+		fputs("Excess arguments\n\n", stderr);
+		fputs(cmd->cmd_help, stderr);
+		exit(1);
+	}
+
+	if (atoi(argv[3]))
+		fd = xopen(argv[1], O_WRONLY, 0);
+
+	ret = rename(argv[1], argv[2]);
+	if (ret < 0)
+		die_errno("rename failed");
+
+	if (fd >= 0) {
+		if (fsync(fd) != 0)
+			die_errno("fsync failed: %s", argv[1]);
+		close(fd);
+	}
+	exit(0);
+}
 
 #define CMD_HIDDEN 	0x0001
 #define CMD(name) { #name, do_##name, name##_desc, name##_help, 0 }
@@ -950,6 +1281,7 @@ const struct cmd_desc cmd_list[] = {
 	CMD(shutdown),
 	CMD(pinfile),
 	CMD(fallocate),
+	CMD(erase),
 	CMD(write),
 	CMD(read),
 	CMD(randread),
@@ -960,6 +1292,12 @@ const struct cmd_desc cmd_list[] = {
 	CMD(get_cblocks),
 	CMD(release_cblocks),
 	CMD(reserve_cblocks),
+	CMD(get_coption),
+	CMD(set_coption),
+	CMD(decompress),
+	CMD(compress),
+	CMD(get_filename_encrypt_mode),
+	CMD(rename),
 	{ NULL, NULL, NULL, NULL, 0 }
 };
 

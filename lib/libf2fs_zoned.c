@@ -24,7 +24,7 @@
 #ifdef HAVE_LINUX_LIMITS_H
 #include <linux/limits.h>
 #endif
-#ifndef ANDROID_WINDOWS_HOST
+#ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
 #include <libgen.h>
@@ -148,40 +148,50 @@ int f2fs_get_zoned_model(int i)
 	return 0;
 }
 
-int f2fs_get_zone_blocks(int i)
+uint32_t f2fs_get_zone_chunk_sectors(struct device_info *dev)
 {
-	struct device_info *dev = c.devices + i;
-	uint64_t sectors;
+	uint32_t sectors;
 	char str[PATH_MAX];
 	FILE *file;
 	int res;
 
-	/* Get zone size */
-	dev->zone_blocks = 0;
-
 	res = get_sysfs_path(dev, "queue/chunk_sectors", str, sizeof(str));
 	if (res != 0) {
 		MSG(0, "\tError: Failed to get device sysfs attribute path\n");
-		return -1;
+		return 0;
 	}
 
 	file = fopen(str, "r");
 	if (!file)
-		return -1;
+		return 0;
 
 	memset(str, 0, sizeof(str));
 	res = fscanf(file, "%s", str);
 	fclose(file);
 
 	if (res != 1)
-		return -1;
+		return 0;
 
-	sectors = atol(str);
+	sectors = atoi(str);
+
+	return sectors;
+}
+
+int f2fs_get_zone_blocks(int i)
+{
+	struct device_info *dev = c.devices + i;
+	uint64_t sectors;
+
+	/* Get zone size */
+	dev->zone_blocks = 0;
+
+	sectors = f2fs_get_zone_chunk_sectors(dev);
 	if (!sectors)
 		return -1;
 
-	dev->zone_blocks = sectors >> (F2FS_BLKSIZE_BITS - 9);
-	sectors = (sectors << 9) / c.sector_size;
+	dev->zone_size = sectors << SECTOR_SHIFT;
+	dev->zone_blocks = sectors >> (F2FS_BLKSIZE_BITS - SECTOR_SHIFT);
+	sectors = dev->zone_size / c.sector_size;
 
 	/*
 	 * Total number of zones: there may
@@ -194,7 +204,7 @@ int f2fs_get_zone_blocks(int i)
 	return 0;
 }
 
-int f2fs_report_zone(int i, u_int64_t sector, void *blkzone)
+int f2fs_report_zone(int i, uint64_t sector, void *blkzone)
 {
 	struct blk_zone *blkz = (struct blk_zone *)blkzone;
 	struct blk_zone_report *rep;
@@ -229,9 +239,9 @@ int f2fs_report_zones(int j, report_zones_cb_t *report_zones_cb, void *opaque)
 	struct blk_zone_report *rep;
 	struct blk_zone *blkz;
 	unsigned int i, n = 0;
-	u_int64_t total_sectors = (dev->total_sectors * c.sector_size)
+	uint64_t total_sectors = (dev->total_sectors * c.sector_size)
 		>> SECTOR_SHIFT;
-	u_int64_t sector = 0;
+	uint64_t sector = 0;
 	int ret = -1;
 
 	rep = malloc(F2FS_REPORT_ZONES_BUFSZ);
@@ -282,8 +292,8 @@ int f2fs_check_zones(int j)
 	struct blk_zone_report *rep;
 	struct blk_zone *blkz;
 	unsigned int i, n = 0;
-	u_int64_t total_sectors;
-	u_int64_t sector;
+	uint64_t total_sectors;
+	uint64_t sector;
 	int last_is_conv = 1;
 	int ret = -1;
 
@@ -435,8 +445,8 @@ int f2fs_reset_zones(int j)
 	struct blk_zone_report *rep;
 	struct blk_zone *blkz;
 	struct blk_zone_range range;
-	u_int64_t total_sectors;
-	u_int64_t sector;
+	uint64_t total_sectors;
+	uint64_t sector;
 	unsigned int i;
 	int ret = -1;
 
@@ -497,6 +507,9 @@ uint32_t f2fs_get_usable_segments(struct f2fs_super_block *sb)
 	int i, j;
 	uint32_t usable_segs = 0, zone_segs;
 
+	if (c.func == RESIZE)
+		return get_sb(segment_count_main);
+
 	for (i = 0; i < c.ndevs; i++) {
 		if (c.devices[i].zoned_model != F2FS_ZONED_HM) {
 			usable_segs += c.devices[i].total_segments;
@@ -521,7 +534,7 @@ uint32_t f2fs_get_usable_segments(struct f2fs_super_block *sb)
 
 #else
 
-int f2fs_report_zone(int i, u_int64_t UNUSED(sector), void *UNUSED(blkzone))
+int f2fs_report_zone(int i, uint64_t UNUSED(sector), void *UNUSED(blkzone))
 {
 	ERR_MSG("%d: Unsupported zoned block device\n", i);
 	return -1;
