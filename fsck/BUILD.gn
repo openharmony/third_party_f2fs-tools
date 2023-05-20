@@ -46,11 +46,11 @@ ohos_executable("fsck.f2fs") {
     "//third_party/f2fs-tools",
     "//third_party/f2fs-tools/include",
     "//third_party/f2fs-tools/lib",
-    "//third_party/e2fsprogs/contrib/android",
+    "//third_party/e2fsprogs/e2fsprogs/contrib/android",
   ]
 
   deps = [
-    "//third_party/e2fsprogs/contrib/android:libdacconfig",
+    "//third_party/e2fsprogs/e2fsprogs/contrib/android:libdacconfig",
     "//third_party/f2fs-tools/lib:libf2fs",
   ]
 
