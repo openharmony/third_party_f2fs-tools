@@ -5,6 +5,8 @@
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
+import("//third_party/e2fsprogs/e2fsprogs.gni")
+
 config("f2fs-defaults") {
   cflags = [
     "-Wno-pointer-sign",
