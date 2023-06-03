@@ -5,7 +5,6 @@
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
-import("//third_party/e2fsprogs/e2fsprogs.gni")
 
 config("f2fs-defaults") {
   cflags = [
@@ -31,7 +30,7 @@ ohos_executable("f2fscrypt") {
   ]
   cflags = [ "-Wno-error=format-extra-args" ]
 
-  deps = [ "//third_party/e2fsprogs/e2fsprogs/lib/uuid:libext2_uuid" ]
+  deps = [ "//third_party/e2fsprogs:libext2_uuid" ]
 
   install_enable = true
   subsystem_name = "thirdparty"
