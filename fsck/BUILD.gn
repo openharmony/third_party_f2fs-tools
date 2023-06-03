@@ -5,7 +5,6 @@
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
-import("//third_party/e2fsprogs/e2fsprogs.gni")
 
 config("f2fs-defaults") {
   cflags = [
@@ -52,7 +51,7 @@ ohos_executable("fsck.f2fs") {
   ]
 
   deps = [
-    "//third_party/e2fsprogs/e2fsprogs/contrib/android:libdacconfig",
+    "//third_party/e2fsprogs:libdacconfig",
     "//third_party/f2fs-tools/lib:libf2fs",
   ]
 
