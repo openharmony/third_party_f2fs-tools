@@ -5,7 +5,6 @@
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
-import("//third_party/e2fsprogs/e2fsprogs.gni")
 
 config("f2fs-defaults") {
   cflags = [
@@ -35,7 +34,7 @@ ohos_executable("mkfs.f2fs") {
   ]
 
   deps = [
-    "//third_party/e2fsprogs/e2fsprogs/lib/uuid:libext2_uuid",
+    "//third_party/e2fsprogs:libext2_uuid",
     "//third_party/f2fs-tools/lib:libf2fs",
   ]
 
