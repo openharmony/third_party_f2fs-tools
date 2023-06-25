@@ -42,7 +42,7 @@ ohos_executable("mkfs.f2fs") {
 
   install_enable = true
   subsystem_name = "thirdparty"
-  part_name = "f2fs_tools"
+  part_name = "f2fs-tools"
   install_images = [
     "system",
     "updater",

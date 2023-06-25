@@ -34,7 +34,7 @@ ohos_executable("f2fscrypt") {
 
   install_enable = true
   subsystem_name = "thirdparty"
-  part_name = "f2fs_tools"
+  part_name = "f2fs-tools"
   install_images = [ "system" ]
 }
 
@@ -55,7 +55,7 @@ ohos_executable("f2fstat") {
 
   install_enable = true
   subsystem_name = "thirdparty"
-  part_name = "f2fs_tools"
+  part_name = "f2fs-tools"
   install_images = [ "system" ]
 }
 
@@ -84,6 +84,6 @@ ohos_executable("fibmap.f2fs") {
 
   install_enable = true
   subsystem_name = "thirdparty"
-  part_name = "f2fs_tools"
+  part_name = "f2fs-tools"
   install_images = [ "system" ]
 }
