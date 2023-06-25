@@ -41,7 +41,7 @@ ohos_shared_library("libf2fs") {
   defines = [ "HAVE_CONFIG_H" ]
   install_enable = true
   subsystem_name = "thirdparty"
-  part_name = "f2fs_tools"
+  part_name = "f2fs-tools"
   install_images = [
     "system",
     "updater",
