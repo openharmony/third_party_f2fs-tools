@@ -123,6 +123,8 @@ void resize_usage()
 	MSG(0, "  -i extended node bitmap, node ratio is 20%% by default\n");
 	MSG(0, "  -s safe resize (Does not resize metadata)");
 	MSG(0, "  -t target sectors [default: device size]\n");
+	MSG(0, "  -O feature1[,feature2,...] e.g. \"fsprojquota,fscasefold\"\n");
+	MSG(0, "  -C [encoding[:flag1,...]] Support casefolding with optional flags\n");
 	MSG(0, "  -V print the version number and exit\n");
 	exit(1);
 }
@@ -527,7 +529,9 @@ void f2fs_parse_options(int argc, char *argv[])
 #endif
 	} else if (!strcmp("resize.f2fs", prog)) {
 #ifdef WITH_RESIZE
-		const char *option_string = "d:fst:iV";
+		const char *option_string = "d:fst:O:C:iV";
+		int val;
+		char *token;
 
 		c.func = RESIZE;
 		while ((option = getopt(argc, argv, option_string)) != EOF) {
@@ -560,6 +564,24 @@ void f2fs_parse_options(int argc, char *argv[])
 				break;
 			case 'i':
 				c.large_nat_bitmap = 1;
+				break;
+			case 'O':
+				if (parse_feature(feature_table, optarg))
+					resize_usage();
+				break;
+			case 'C':
+				token = strtok(optarg, ":");
+				val = f2fs_str2encoding(token);
+				if (val < 0) {
+					MSG(0, "\tError: Unknown encoding %s\n", token);
+				}
+				c.s_encoding = val;
+				token = strtok(NULL, "");
+				val = f2fs_str2encoding_flags(&token, &c.s_encoding_flags);
+				if (val) {
+					MSG(0, "\tError: Unknown flag %s\n",token);
+				}
+				c.feature |= cpu_to_le32(F2FS_FEATURE_CASEFOLD);
 				break;
 			case 'V':
 				show_version(prog);
