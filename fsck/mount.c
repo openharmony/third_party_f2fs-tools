@@ -940,6 +940,44 @@ int sanity_check_raw_super(struct f2fs_super_block *sb, enum SB_ADDR sb_addr)
 	return 0;
 }
 
+static int check_and_set_one_feature(struct f2fs_sb_info *sbi, int feature)
+{
+	if (c.feature & cpu_to_le32(feature)) {
+		if (!(sbi->raw_super->feature & cpu_to_le32(feature))) {
+			sbi->raw_super->feature |= cpu_to_le32(feature);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void check_and_set_features(struct f2fs_sb_info *sbi, enum SB_ADDR sb_addr)
+{
+	bool need_fix = false;
+	if (check_and_set_one_feature(sbi, F2FS_FEATURE_EXTRA_ATTR)) {
+		MSG(0, "Fix set feature: extra_attr\n");
+		need_fix = true;
+	}
+
+	if (check_and_set_one_feature(sbi, F2FS_FEATURE_PRJQUOTA)) {
+		MSG(0, "Fix set feature: project_quota\n");
+		need_fix = true;
+	}
+
+	if (check_and_set_one_feature(sbi, F2FS_FEATURE_CASEFOLD)) {
+		struct f2fs_super_block *sb = sbi->raw_super;
+		set_sb(s_encoding, c.s_encoding);
+		set_sb(s_encoding_flags, c.s_encoding_flags);
+		MSG(0, "Fix set feature: casefold, s_encoding: %d, s_encoding_flags: %d\n",
+			c.s_encoding, c.s_encoding_flags);
+		need_fix = true;
+	}
+
+	if (need_fix) {
+		update_superblock(sbi->raw_super, SB_MASK(sb_addr));
+	}
+}
+
 #define CHECK_PERIOD (3600 * 24 * 30)	// one month by default
 
 int validate_super_block(struct f2fs_sb_info *sbi, enum SB_ADDR sb_addr)
@@ -957,6 +995,7 @@ int validate_super_block(struct f2fs_sb_info *sbi, enum SB_ADDR sb_addr)
 					sizeof(struct f2fs_super_block));
 
 	if (!sanity_check_raw_super(sbi->raw_super, sb_addr)) {
+		check_and_set_features(sbi, sb_addr);
 		/* get kernel version */
 		if (c.kd >= 0) {
 			dev_read_version(c.version, 0, VERSION_NAME_LEN);
