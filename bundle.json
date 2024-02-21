@@ -30,8 +30,18 @@
             ]
         },
         "build": {
-            "sub_component": [],
-            "inner_kits": [],
+            "sub_component": ["//third_party/f2fs-tools:f2fs-tools"],
+            "inner_kits": [
+                {
+                    "name": "//third_party/f2fs-tools/lib:libf2fs",
+                    "header": {
+                      "header_files": [
+                        "utf8data.h"
+                      ],
+                      "header_base": "//third_party/f2fs-tools/lib"
+                    }
+                }
+            ],
             "test": []
         }
     }
