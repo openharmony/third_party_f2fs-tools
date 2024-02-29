@@ -30,7 +30,10 @@
             ]
         },
         "build": {
-            "sub_component": ["//third_party/f2fs-tools:f2fs-tools"],
+            "sub_component": [
+                "//third_party/f2fs-tools:f2fs-tools",
+                "//third_party/f2fs-tools/mkfs:mkfs.f2fs"
+            ],
             "inner_kits": [
                 {
                     "name": "//third_party/f2fs-tools/lib:libf2fs",
