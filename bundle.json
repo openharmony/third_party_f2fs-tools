@@ -31,7 +31,7 @@
         },
         "build": {
             "sub_component": [
-                "//third_party/f2fs-tools:f2fs-tools",
+                "//third_party/f2fs-tools/fsck:fsck.f2fs",
                 "//third_party/f2fs-tools/mkfs:mkfs.f2fs"
             ],
             "inner_kits": [
