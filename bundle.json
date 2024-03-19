@@ -30,10 +30,7 @@
             ]
         },
         "build": {
-            "sub_component": [
-                "//third_party/f2fs-tools/fsck:fsck.f2fs",
-                "//third_party/f2fs-tools/mkfs:mkfs.f2fs"
-            ],
+            "sub_component": [],
             "inner_kits": [
                 {
                     "name": "//third_party/f2fs-tools/lib:libf2fs",
@@ -43,6 +40,12 @@
                       ],
                       "header_base": "//third_party/f2fs-tools/lib"
                     }
+                },
+                {
+                    "name": "//third_party/f2fs-tools/fsck:fsck.f2fs"
+                },
+                {
+                    "name": "//third_party/f2fs-tools/mkfs:mkfs.f2fs"
                 }
             ],
             "test": []
