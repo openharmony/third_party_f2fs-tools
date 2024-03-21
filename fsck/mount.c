@@ -9,6 +9,7 @@
  * published by the Free Software Foundation.
  */
 #include "fsck.h"
+#include "fsck_debug.h"
 #include "node.h"
 #include "xattr.h"
 #include <locale.h>
@@ -3594,8 +3595,10 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 	ret = validate_super_block(sbi, SB0_ADDR);
 	if (ret) {
 		ret = validate_super_block(sbi, SB1_ADDR);
-		if (ret)
+		if (ret) {
+			dump_sbi_info(sbi);
 			return -1;
+		}
 	}
 	sb = F2FS_RAW_SUPER(sbi);
 
@@ -3610,6 +3613,8 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 	ret = get_valid_checkpoint(sbi);
 	if (ret) {
 		ERR_MSG("Can't find valid checkpoint\n");
+		dump_sbi_info(sbi);
+		print_ckpt_info(sbi);
 		return -1;
 	}
 
@@ -3617,6 +3622,8 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 
 	if (sanity_check_ckpt(sbi)) {
 		ERR_MSG("Checkpoint is polluted\n");
+		dump_sbi_info(sbi);
+		print_ckpt_info(sbi);
 		return -1;
 	}
 	cp = F2FS_CKPT(sbi);
