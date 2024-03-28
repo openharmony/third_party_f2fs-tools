@@ -282,11 +282,8 @@ static long dcache_find(off64_t blk)
 /* Physical read into cache */
 static int dcache_io_read(int fd, long entry, off64_t offset, off64_t blk)
 {
-	if (lseek64(fd, offset, SEEK_SET) < 0) {
-		MSG(0, "\n lseek64 fail.\n");
-		return -1;
-	}
-	if (read(fd, dcache_buf + entry * F2FS_BLKSIZE, F2FS_BLKSIZE) < 0) {
+	if (pread64(fd, dcache_buf + entry * F2FS_BLKSIZE,
+		    F2FS_BLKSIZE, offset) < 0) {
 		MSG(0, "\n read() fail.\n");
 		return -1;
 	}
@@ -397,9 +394,7 @@ int dev_read_version(void *buf, __u64 offset, size_t len)
 {
 	if (c.sparse_mode)
 		return 0;
-	if (lseek64(c.kd, (off64_t)offset, SEEK_SET) < 0)
-		return -1;
-	if (read(c.kd, buf, len) < 0)
+	if (pread64(c.kd, buf, len, offset) < 0)
 		return -1;
 	return 0;
 }
@@ -542,9 +537,7 @@ int dev_read(void *buf, __u64 offset, size_t len)
 	err = dcache_read(fd, buf, (off64_t)offset, len);
 	if (err <= 0)
 		return err;
-	if (lseek64(fd, (off64_t)offset, SEEK_SET) < 0)
-		return -1;
-	if (read(fd, buf, len) < 0)
+	if (pread64(fd, buf, len, offset) < 0)
 		return -1;
 	return 0;
 }
@@ -590,9 +583,7 @@ int dev_write(void *buf, __u64 offset, size_t len)
 	 */
 	if (dcache_update_cache(fd, buf, (off64_t)offset, len) < 0)
 		return -1;
-	if (lseek64(fd, (off64_t)offset, SEEK_SET) < 0)
-		return -1;
-	if (write(fd, buf, len) < 0)
+	if (pwrite64(fd, buf, len, offset) < 0)
 		return -1;
 	return 0;
 }
@@ -604,9 +595,7 @@ int dev_write_block(void *buf, __u64 blk_addr)
 
 int dev_write_dump(void *buf, __u64 offset, size_t len)
 {
-	if (lseek64(c.dump_fd, (off64_t)offset, SEEK_SET) < 0)
-		return -1;
-	if (write(c.dump_fd, buf, len) < 0)
+	if (pwrite64(c.dump_fd, buf, len, offset) < 0)
 		return -1;
 	return 0;
 }
@@ -629,9 +618,7 @@ int dev_fill(void *buf, __u64 offset, size_t len)
 	/* Only allow fill to zero */
 	if (*((__u8*)buf))
 		return -1;
-	if (lseek64(fd, (off64_t)offset, SEEK_SET) < 0)
-		return -1;
-	if (write(fd, buf, len) < 0)
+	if (pwrite64(fd, buf, len, offset) < 0)
 		return -1;
 	return 0;
 }
