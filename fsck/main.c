@@ -90,6 +90,7 @@ void dump_usage()
 	MSG(0, "[options]:\n");
 	MSG(0, "  -d debug level [default:0]\n");
 	MSG(0, "  -i inode no (hex)\n");
+	MSG(0, "  -I inode no (hex) scan full disk\n");
 	MSG(0, "  -n [NAT dump nid from #1~#2 (decimal), for all 0~-1]\n");
 	MSG(0, "  -M show a block map\n");
 	MSG(0, "  -s [SIT dump segno from #1~#2 (decimal), for all 0~-1]\n");
@@ -121,7 +122,8 @@ void resize_usage()
 	MSG(0, "[options]:\n");
 	MSG(0, "  -d debug level [default:0]\n");
 	MSG(0, "  -i extended node bitmap, node ratio is 20%% by default\n");
-	MSG(0, "  -s safe resize (Does not resize metadata)");
+	MSG(0, "  -o overprovision percentage [default:auto]\n");
+	MSG(0, "  -s safe resize (Does not resize metadata)\n");
 	MSG(0, "  -t target sectors [default: device size]\n");
 	MSG(0, "  -O feature1[,feature2,...] e.g. \"fsprojquota,fscasefold\"\n");
 	MSG(0, "  -C [encoding[:flag1,...]] Support casefolding with optional flags\n");
@@ -273,8 +275,10 @@ void f2fs_parse_options(int argc, char *argv[])
 						atoi(optarg);
 				break;
 			case 'g':
-				if (!strcmp(optarg, "android"))
+				if (!strcmp(optarg, "android")) {
 					c.defset = CONF_ANDROID;
+					MSG(0, "Info: Set conf for android\n");
+				}
 				break;
 			case 'l':
 				c.layout = 1;
@@ -382,7 +386,7 @@ void f2fs_parse_options(int argc, char *argv[])
 		}
 	} else if (!strcmp("dump.f2fs", prog)) {
 #ifdef WITH_DUMP
-		const char *option_string = "d:i:n:Ms:Sa:b:V";
+		const char *option_string = "d:i:I:n:Ms:Sa:b:V";
 		static struct dump_option dump_opt = {
 			.nid = 0,	/* default root ino */
 			.start_nat = -1,
@@ -392,6 +396,7 @@ void f2fs_parse_options(int argc, char *argv[])
 			.start_ssa = -1,
 			.end_ssa = -1,
 			.blk_addr = -1,
+			.scan_nid = 0,
 		};
 
 		c.func = DUMP;
@@ -408,14 +413,6 @@ void f2fs_parse_options(int argc, char *argv[])
 				MSG(0, "Info: Debug level = %d\n",
 							c.dbg_lv);
 				break;
-			case 'g':
-				if (!strcmp(optarg, "android")) {
-					c.defset = CONF_ANDROID;
-					MSG(0, "Info: Set conf for android\n");
-					break;
-				}
-				err = EWRONG_OPT;
-				break;
 			case 'i':
 				if (strncmp(optarg, "0x", 2))
 					ret = sscanf(optarg, "%d",
@@ -423,6 +420,14 @@ void f2fs_parse_options(int argc, char *argv[])
 				else
 					ret = sscanf(optarg, "%x",
 							&dump_opt.nid);
+				break;
+			case 'I':
+				if (strncmp(optarg, "0x", 2))
+					ret = sscanf(optarg, "%d",
+							&dump_opt.scan_nid);
+				else
+					ret = sscanf(optarg, "%x",
+							&dump_opt.scan_nid);
 				break;
 			case 'n':
 				ret = sscanf(optarg, "%d~%d",
@@ -529,7 +534,7 @@ void f2fs_parse_options(int argc, char *argv[])
 #endif
 	} else if (!strcmp("resize.f2fs", prog)) {
 #ifdef WITH_RESIZE
-		const char *option_string = "d:fst:O:C:iV";
+		const char *option_string = "d:fst:O:C:io:V";
 		int val;
 		char *token;
 
@@ -582,6 +587,8 @@ void f2fs_parse_options(int argc, char *argv[])
 					MSG(0, "\tError: Unknown flag %s\n",token);
 				}
 				c.feature |= cpu_to_le32(F2FS_FEATURE_CASEFOLD);
+			case 'o':
+				c.new_overprovision = atof(optarg);
 				break;
 			case 'V':
 				show_version(prog);
@@ -936,6 +943,8 @@ static void do_dump(struct f2fs_sb_info *sbi)
 		dump_info_from_blkaddr(sbi, opt->blk_addr);
 	if (opt->nid)
 		dump_node(sbi, opt->nid, 0);
+	if (opt->scan_nid)
+		dump_node_scan_disk(sbi, opt->scan_nid);
 
 	print_cp_state(flag);
 

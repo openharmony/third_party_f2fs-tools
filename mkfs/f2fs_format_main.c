@@ -24,7 +24,8 @@
 #include <errno.h>
 #include <getopt.h>
 
-#include "config.h"
+#include <f2fs_fs.h>
+
 #ifdef HAVE_LIBBLKID
 #include <blkid/blkid.h>
 #endif
@@ -32,7 +33,6 @@
 #include <uuid/uuid.h>
 #endif
 
-#include "f2fs_fs.h"
 #include "quota.h"
 #include "f2fs_format_utils.h"
 
@@ -482,7 +482,7 @@ int main(int argc, char *argv[])
 	 * Some options are mandatory for host-managed
 	 * zoned block devices.
 	 */
-	if (c.zoned_model == F2FS_ZONED_HM && !c.zoned_mode) {
+	if (c.zoned_model != F2FS_ZONED_NONE && !c.zoned_mode) {
 		MSG(0, "\tError: zoned block device feature is required\n");
 		goto err_format;
 	}

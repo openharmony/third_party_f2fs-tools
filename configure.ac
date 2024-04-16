@@ -39,12 +39,28 @@ AM_INIT_AUTOMAKE([-Wall -Werror foreign tar-pax dist-xz])
 
 # Test configure options.
 AC_ARG_WITH([selinux],
-	AS_HELP_STRING([--without-selinux],
-	  [Ignore presence of libselinux and disable selinux support]))
+	[AS_HELP_STRING([--without-selinux],
+	  [Ignore presence of libselinux and disable selinux support])],
+	[],
+	[with_selinux=check])
 
 AC_ARG_WITH([blkid],
-	AS_HELP_STRING([--without-blkid],
-	  [Ignore presence of libblkid and disable blkid support]))
+	[AS_HELP_STRING([--without-blkid],
+	  [Ignore presence of libblkid and disable blkid support])],
+	[],
+	[with_blkid=check])
+
+AC_ARG_WITH([lzo2],
+	[AS_HELP_STRING([--without-lzo2],
+	  [Ignore presence of liblzo2 and disable lzo2 support])],
+	[],
+	[with_lzo2=check])
+
+AC_ARG_WITH([lz4],
+	[AS_HELP_STRING([--without-lz4],
+	  [Ignore presence of liblz4 and disable lz4 support])],
+	[],
+	[with_lz4=check])
 
 # Checks for programs.
 AC_PROG_CC
@@ -55,29 +71,53 @@ AC_PATH_PROG([LDCONFIG], [ldconfig],
        [$PATH:/sbin])
 
 # Checks for libraries.
-AC_CHECK_LIB([blkid], [blkid_probe_all],
-	[AC_SUBST([libblkid_LIBS], ["-lblkid"])
-		AC_DEFINE([HAVE_LIBBLKID], [1],
-		[Define if you have libblkid])
-	], [], [])
+AS_IF([test "x$with_blkid" != xno],
+	[AC_CHECK_LIB([blkid], [blkid_probe_all],
+		[AC_SUBST([libblkid_LIBS], ["-lblkid"])
+			AC_DEFINE([HAVE_LIBBLKID], [1],
+			[Define if you have libblkid])
+		],
+		[if test "x$with_blkid" != xcheck; then
+			AC_MSG_FAILURE(
+                [--with-blkid was given, but test for blkid failed])
+        fi
+	], -lblkid)])
 
-AC_CHECK_LIB([lzo2], [main],
-	[AC_SUBST([liblzo2_LIBS], ["-llzo2"])
-		AC_DEFINE([HAVE_LIBLZO2], [1],
-		[Define if you have liblzo2])
-	], [], [])
+AS_IF([test "x$with_lzo2" != xno],
+	[AC_CHECK_LIB([lzo2], [main],
+		[AC_SUBST([liblzo2_LIBS], ["-llzo2"])
+			AC_DEFINE([HAVE_LIBLZO2], [1],
+			[Define if you have liblzo2])
+		],
+		[if test "x$with_lzo2" != xcheck; then
+			AC_MSG_FAILURE(
+                [--with-lzo2 was given, but test for lzo2 failed])
+        fi
+	], -llzo2)])
 
-AC_CHECK_LIB([lz4], [main],
-	[AC_SUBST([liblz4_LIBS], ["-llz4"])
-		AC_DEFINE([HAVE_LIBLZ4], [1],
-		[Define if you have liblz4])
-	], [], [])
+AS_IF([test "x$with_lz4" != xno],
+	[AC_CHECK_LIB([lz4], [main],
+		[AC_SUBST([liblz4_LIBS], ["-llz4"])
+			AC_DEFINE([HAVE_LIBLZ4], [1],
+			[Define if you have liblz4])
+		],
+		[if test "x$with_lz4" != xcheck; then
+			AC_MSG_FAILURE(
+                [--with-lz4 was given, but test for lz4 failed])
+        fi
+	], -llz4)])
 
-AC_CHECK_LIB([selinux], [getcon],
-	[AC_SUBST([libselinux_LIBS], ["-lselinux"])
-		AC_DEFINE([HAVE_LIBSELINUX], [1],
-		[Define if you have libselinux])
-	], [], [])
+AS_IF([test "x$with_selinux" != xno],
+	[AC_CHECK_LIB([selinux], [getcon],
+		[AC_SUBST([libselinux_LIBS], ["-lselinux"])
+			AC_DEFINE([HAVE_LIBSELINUX], [1],
+			[Define if you have libselinux])
+		],
+		[if test "x$with_selinux" != xcheck; then
+			AC_MSG_FAILURE(
+				[--with-selinux was given, but test for selinux failed])
+		fi
+	], -lselinux)])
 
 AC_CHECK_LIB([uuid], [uuid_clear],
 	[AC_SUBST([libuuid_LIBS], ["-luuid"])
@@ -151,6 +191,7 @@ AC_CHECK_FUNCS_ONCE([
 	lseek64
 	memset
 	setmntent
+	clock_gettime
 ])
 
 AS_IF([test "$ac_cv_header_byteswap_h" = "yes"],
@@ -219,7 +260,6 @@ AC_CONFIG_FILES([
 	mkfs/Makefile
 	fsck/Makefile
 	tools/Makefile
-	tools/sg_write_buffer/Makefile
 	tools/f2fs_io/Makefile
 ])
 
@@ -234,12 +274,12 @@ AC_CHECK_MEMBER([struct blk_zone.capacity],
 		]])
 
 # export library version info for mkfs/libf2fs_format_la
-AC_SUBST(FMT_CURRENT, 8)
+AC_SUBST(FMT_CURRENT, 9)
 AC_SUBST(FMT_REVISION, 0)
 AC_SUBST(FMT_AGE, 0)
 
 # export library version info for lib/libf2fs_la
-AC_SUBST(LIBF2FS_CURRENT, 9)
+AC_SUBST(LIBF2FS_CURRENT, 10)
 AC_SUBST(LIBF2FS_REVISION, 0)
 AC_SUBST(LIBF2FS_AGE, 0)
 
