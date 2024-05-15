@@ -18,10 +18,10 @@
 #define F2FS_MINOR_VERSION 14
 
 /* f2fs-tools date based on Source releases */
-#define F2FS_TOOLS_DATE "2022-05-13"
+#define F2FS_TOOLS_DATE "2023-04-11"
 
 /* f2fs-tools version */
-#define F2FS_TOOLS_VERSION "1.15.0"
+#define F2FS_TOOLS_VERSION "v1.16.0"
 
 /* Define to 1 if you have the `add_key' function. */
 /* #undef HAVE_ADD_KEY */
