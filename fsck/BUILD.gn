@@ -52,13 +52,9 @@ ohos_executable("fsck.f2fs") {
     "//third_party/e2fsprogs/e2fsprogs/contrib/android",
   ]
 
-  deps = [
-    "//third_party/f2fs-tools/lib:libf2fs",
-  ]
+  deps = [ "//third_party/f2fs-tools/lib:libf2fs" ]
 
-  external_deps = [
-    "e2fsprogs:libdacconfig"
-  ]
+  external_deps = [ "e2fsprogs:libdacconfig" ]
 
   defines = [ "HAVE_CONFIG_H" ]
 
