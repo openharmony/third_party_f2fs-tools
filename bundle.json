@@ -33,13 +33,7 @@
             "sub_component": [],
             "inner_kits": [
                 {
-                    "name": "//third_party/f2fs-tools/lib:libf2fs",
-                    "header": {
-                      "header_files": [
-                        "utf8data.h"
-                      ],
-                      "header_base": "//third_party/f2fs-tools/lib"
-                    }
+                    "name": "//third_party/f2fs-tools/lib:libf2fs"
                 },
                 {
                     "name": "//third_party/f2fs-tools/fsck:fsck.f2fs"
