@@ -33,13 +33,9 @@ ohos_executable("mkfs.f2fs") {
     "//third_party/f2fs-tools/lib",
   ]
 
-  deps = [
-    "//third_party/f2fs-tools/lib:libf2fs",
-  ]
+  deps = [ "//third_party/f2fs-tools/lib:libf2fs" ]
 
-  external_deps = [
-    "e2fsprogs:libext2_uuid",
-  ]
+  external_deps = [ "e2fsprogs:libext2_uuid" ]
 
   defines = [ "HAVE_CONFIG_H" ]
 
