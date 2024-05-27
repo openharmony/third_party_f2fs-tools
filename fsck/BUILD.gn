@@ -53,8 +53,11 @@ ohos_executable("fsck.f2fs") {
   ]
 
   deps = [
-    "//third_party/e2fsprogs:libdacconfig",
     "//third_party/f2fs-tools/lib:libf2fs",
+  ]
+
+  external_deps = [
+    "e2fsprogs:libdacconfig"
   ]
 
   defines = [ "HAVE_CONFIG_H" ]
