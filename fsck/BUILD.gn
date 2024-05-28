@@ -53,9 +53,9 @@ ohos_executable("fsck.f2fs") {
 
   deps = [ "//third_party/f2fs-tools/lib:libf2fs" ]
 
-  public_external_deps = [ 
-      "e2fsprogs:libdacconfig",
-      "e2fsprogs:e2fsdroid"
+  public_external_deps = [
+    "e2fsprogs:e2fsdroid",
+    "e2fsprogs:libdacconfig",
   ]
 
   defines = [ "HAVE_CONFIG_H" ]
