@@ -27,16 +27,14 @@ ohos_executable("mkfs.f2fs") {
 
   include_dirs = [
     ".",
-    "//third_party/e2fsprogs/e2fsprogs/lib/uuid",
     "//third_party/f2fs-tools",
     "//third_party/f2fs-tools/include",
     "//third_party/f2fs-tools/lib",
   ]
 
-  deps = [
-    "//third_party/e2fsprogs:libext2_uuid",
-    "//third_party/f2fs-tools/lib:libf2fs",
-  ]
+  deps = [ "//third_party/f2fs-tools/lib:libf2fs" ]
+
+  public_external_deps = [ "e2fsprogs:libext2_uuid" ]
 
   defines = [ "HAVE_CONFIG_H" ]
 
