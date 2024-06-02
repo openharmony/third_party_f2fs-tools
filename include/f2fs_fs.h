@@ -1635,13 +1635,10 @@ static inline double get_best_overprovision(struct f2fs_super_block *sb)
 	}
 
 	for (; candidate <= end; candidate += diff) {
-		reserved = (100 / candidate + 1 + NR_CURSEG_TYPE) *
+		reserved = (2 * (100 / candidate + 1) + 6) *
 				round_up(usable_main_segs, get_sb(section_count));
 		ovp = (usable_main_segs - reserved) * candidate / 100;
-		if (ovp < 0)
-			continue;
-		space = usable_main_segs - max(reserved, ovp) -
-					2 * get_sb(segs_per_sec);
+		space = usable_main_segs - reserved - ovp;
 		if (max_space < space) {
 			max_space = space;
 			max_ovp = candidate;
