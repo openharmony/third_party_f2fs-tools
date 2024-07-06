@@ -26,7 +26,7 @@
 #include <time.h>
 
 #ifdef HAVE_UUID_UUID_H
-#include <uuid/uuid.h>
+#include <uuid.h>
 #endif
 #ifndef HAVE_LIBUUID
 #define uuid_parse(a, b) -1
