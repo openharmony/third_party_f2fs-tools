@@ -198,6 +198,10 @@
 /* Version number of package */
 #define VERSION "1.15.0"
 
+#define HAVE_UUID_UUID_H 1
+
+#define HAVE_LIBUUID 1
+
 /* Define to `__inline__' or `__inline' if that's what the C compiler
    calls it, or to nothing if 'inline' is not supported under any name.  */
 #ifndef __cplusplus
