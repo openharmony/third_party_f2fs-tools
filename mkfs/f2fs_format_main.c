@@ -30,7 +30,7 @@
 #include <blkid/blkid.h>
 #endif
 #ifdef HAVE_UUID_UUID_H
-#include <uuid/uuid.h>
+#include <uuid.h>
 #endif
 
 #include "quota.h"
