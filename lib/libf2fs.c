@@ -483,7 +483,7 @@ f2fs_hash_t f2fs_dentry_hash(int encoding, int casefolded,
 		if (!buff)
 			return -ENOMEM;
 		dlen = table->ops->casefold(table, name, len, buff, F2FS_NAME_LEN);
-		if (dlen < 0) {
+		if (dlen <= 0) {
 			free(buff);
 			goto opaque_seq;
 		}
