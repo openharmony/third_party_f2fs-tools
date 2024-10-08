@@ -832,7 +832,7 @@ check_next:
 				le16_to_cpu(node_blk->i.i_inline_xattr_size);
 
 			if (!inline_size ||
-					inline_size > MAX_INLINE_XATTR_SIZE) {
+					inline_size > MAX_INLINE_XATTR_SIZE(&node_blk->i)) {
 				ASSERT_MSG("[0x%x] wrong inline_xattr_size:%u",
 						nid, inline_size);
 				if (c.fix_on) {

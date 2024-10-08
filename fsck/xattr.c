@@ -151,7 +151,7 @@ int f2fs_setxattr(struct f2fs_sb_info *sbi, nid_t ino, int index, const char *na
 
 	len = strlen(name);
 
-	if (len > F2FS_NAME_LEN || size > MAX_VALUE_LEN)
+	if (len > F2FS_NAME_LEN)
 		return -ERANGE;
 
 	if (ino < 3)
@@ -165,6 +165,12 @@ int f2fs_setxattr(struct f2fs_sb_info *sbi, nid_t ino, int index, const char *na
 	ASSERT(inode);
 	ret = dev_read_block(inode, ni.blk_addr);
 	ASSERT(ret >= 0);
+
+	if (size > MAX_VALUE_LEN(&inode->i)) {
+		MSG(0, "Size %d exceeds max value len %d.\n", size, MAX_VALUE_LEN(&inode->i));
+		free(inode);
+		return -ERANGE;
+	}
 
 	base_addr = read_all_xattrs(sbi, inode);
 	ASSERT(base_addr);

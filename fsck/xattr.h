@@ -135,13 +135,14 @@ static inline int f2fs_acl_count(int size)
 #define MIN_OFFSET	XATTR_ALIGN(F2FS_BLKSIZE -		\
 		sizeof(struct node_footer) - sizeof(__u32))
 
-#define MAX_VALUE_LEN	(MIN_OFFSET -				\
+#define MAX_XATTR_BLOCK_SIZE (F2FS_BLKSIZE - sizeof(struct node_footer))
+
+#define MAX_XATTR_SIZE(inode) (XATTR_ALIGN((MAX_INLINE_XATTR_SIZE(inode)) + \
+		(MAX_XATTR_BLOCK_SIZE)))
+
+#define MAX_VALUE_LEN(inode)	(MAX_XATTR_SIZE(inode) -			\
 		sizeof(struct f2fs_xattr_header) -		\
 		sizeof(struct f2fs_xattr_entry))
 
-#define MAX_INLINE_XATTR_SIZE						\
-			(DEF_ADDRS_PER_INODE -				\
-			F2FS_TOTAL_EXTRA_ATTR_SIZE / sizeof(__le32) -	\
-			DEF_INLINE_RESERVED_SIZE -			\
-			MIN_INLINE_DENTRY_SIZE / sizeof(__le32))
+#define MAX_INLINE_XATTR_SIZE(inode) (inline_xattr_size(inode))
 #endif
