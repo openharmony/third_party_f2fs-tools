@@ -897,7 +897,7 @@ int get_device_info(int i)
 #ifdef HDIO_GETGIO
 	struct hd_geometry geom;
 #endif
-#if !defined(WITH_ANDROID) && defined(__linux__)
+#if !defined(WITH_OHOS) && defined(__linux__)
 	sg_io_hdr_t io_hdr;
 	unsigned char reply_buffer[96] = {0};
 	unsigned char model_inq[6] = {MODELINQUIRY};
@@ -999,7 +999,7 @@ int get_device_info(int i)
 #endif
 		}
 
-#if !defined(WITH_ANDROID) && defined(__linux__)
+#if !defined(WITH_OHOS) && defined(__linux__)
 		/* Send INQUIRY command */
 		memset(&io_hdr, 0, sizeof(sg_io_hdr_t));
 		io_hdr.interface_id = 'S';
