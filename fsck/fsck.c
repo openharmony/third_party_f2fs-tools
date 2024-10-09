@@ -3335,7 +3335,7 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 		c.bug_on = 1;
 	}
 
-#ifndef WITH_ANDROID
+#ifndef WITH_OHOS
 	if (nr_unref_nid && !c.ro) {
 		char ans[255] = {0};
 		int res;
