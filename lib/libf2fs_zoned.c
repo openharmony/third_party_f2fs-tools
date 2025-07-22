@@ -306,7 +306,8 @@ int f2fs_check_zones(int j)
 	dev->zone_cap_blocks = malloc(dev->nr_zones * sizeof(size_t));
 	if (!dev->zone_cap_blocks) {
 		ERR_MSG("No memory for zone capacity list.\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto out;
 	}
 	memset(dev->zone_cap_blocks, 0, (dev->nr_zones * sizeof(size_t)));
 
@@ -347,10 +348,8 @@ int f2fs_check_zones(int j)
 			}
 
 			if (blk_zone_conv(blkz)) {
-				DBG(2,
-				    "Zone %05u: Conventional, cond 0x%x (%s), sector %llu, %llu sectors\n",
-				    n,
-				    blk_zone_cond(blkz),
+				DBG(2, "Zone %05u: Conventional, cond 0x%x (%s), sector %llu, %llu sectors\n", 
+				    n, blk_zone_cond(blkz),
 				    blk_zone_cond_str(blkz),
 				    blk_zone_sector(blkz),
 				    blk_zone_length(blkz));
