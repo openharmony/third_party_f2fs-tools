@@ -42,6 +42,10 @@
 		typecheck(unsigned long long, b) &&                     \
 		((long long)((a) - (b)) > 0))
 
+#define POISON_POINTER_DELTA 0
+#define LIST_POISON1  ((void *) (0x00100100 + POISON_POINTER_DELTA))
+#define LIST_POISON2  ((void *) (0x00200200 + POISON_POINTER_DELTA))
+
 #define container_of(ptr, type, member) ({			\
 	const typeof(((type *)0)->member) * __mptr = (ptr);	\
 	(type *)((char *)__mptr - offsetof(type, member)); })
@@ -69,11 +73,36 @@ static inline void __list_del(struct list_head * prev, struct list_head * next)
 static inline void list_del(struct list_head *entry)
 {
 	__list_del(entry->prev, entry->next);
+	entry->next = LIST_POISON1;
+	entry->prev = LIST_POISON2;
 }
 
 static inline void list_add_tail(struct list_head *new, struct list_head *head)
 {
 	__list_add(new, head->prev, head);
+}
+
+static inline void INIT_LIST_HEAD(struct list_head *list)
+{
+	list->next = list;
+	list->prev = list;
+}
+
+static inline void list_del_entry(struct list_head *entry)
+{
+	__list_del(entry->prev, entry->next);
+}
+
+static inline int list_empty(const struct list_head *head)
+{
+	return head->next == head;
+}
+
+static inline void list_move_tail(struct list_head *list,
+                                  struct list_head *head)
+{
+	list_del_entry(list);
+	list_add_tail(list, head);
 }
 
 #define LIST_HEAD_INIT(name) { &(name), &(name) }
@@ -97,6 +126,9 @@ static inline void list_add_tail(struct list_head *new, struct list_head *head)
 		n = list_next_entry(pos, member);			\
 		&pos->member != (head);					\
 		pos = n, n = list_next_entry(n, member))
+
+#define list_first_entry(ptr, type, member) \
+	list_entry((ptr)->next, type, member)
 
 /*
  * indicate meta/data type
@@ -178,6 +210,7 @@ struct sit_info {
 
 struct curseg_info {
 	struct f2fs_summary_block *sum_blk;     /* cached summary block */
+	struct f2fs_journal *journal;           /* cached journal info */
 	unsigned char alloc_type;               /* current allocation type */
 	unsigned int segno;                     /* current segment number */
 	unsigned short next_blkoff;             /* next block offset to write */

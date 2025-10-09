@@ -9,6 +9,9 @@
  */
 #include "fsck.h"
 
+extern void f2fs_enable_large_nat_bitmap(struct f2fs_sb_info *sbi, unsigned long long total_size,
+									unsigned long long cur_size);
+
 static int get_new_sb(struct f2fs_super_block *sb)
 {
 	uint32_t zone_size_bytes;
@@ -175,6 +178,12 @@ static void migrate_main(struct f2fs_sb_info *sbi, unsigned int offset)
 
 	ASSERT(raw != NULL);
 
+	if (offset == 0) {
+		DBG(0, "Info: The address of the main area has not changed, so no migration is required.\n");
+		free(raw);
+		return;
+	}
+
 	for (i = MAIN_SEGS(sbi) - 1; i >= 0; i--) {
 		se = get_seg_entry(sbi, i);
 		if (!se->valid_blocks)
@@ -232,6 +241,24 @@ static void move_ssa(struct f2fs_sb_info *sbi, unsigned int segno,
 	DBG(1, "Info: Done to migrate SSA blocks\n");
 }
 
+static void init_ssa_end_to_main_addr(struct f2fs_sb_info *sbi,
+	struct f2fs_super_block *new_sb, block_t start, block_t end)
+{
+	int ret;
+	block_t offset = 0;
+	void *zero_blk = calloc(F2FS_BLKSIZE, 1);
+
+	ASSERT(zero_blk);
+	while (start + offset < end) {
+		ret = dev_write_block(zero_blk, start + offset);
+		DBG(3, "Write zero: 0x%x\n", start + offset);
+		ASSERT(ret >= 0);
+		offset++;
+	}
+
+	free(zero_blk);
+}
+
 static void migrate_ssa(struct f2fs_sb_info *sbi,
 		struct f2fs_super_block *new_sb, unsigned int offset)
 {
@@ -242,9 +269,19 @@ static void migrate_ssa(struct f2fs_sb_info *sbi,
 	block_t expand_sum_blkaddr = new_sum_blkaddr +
 					MAIN_SEGS(sbi) - offset;
 	block_t blkaddr;
+	bool only_init_tail = is_fs_layout_unchanged(sb, new_sb);
+
 	int ret;
 	void *zero_block = calloc(BLOCK_SZ, 1);
 	ASSERT(zero_block);
+
+	if (only_init_tail) {
+		init_ssa_end_to_main_addr(sbi, new_sb, get_newsb(ssa_blkaddr) + MAIN_SEGS(sbi), end_sum_blkaddr);
+		DBG(0, "Info: Done to initial SSA expand blocks: sum_blkaddr = 0x%x -> 0x%x\n",
+				get_newsb(ssa_blkaddr) + MAIN_SEGS(sbi), end_sum_blkaddr);
+		free(zero_block);
+		return;
+	}
 
 	if (offset && new_sum_blkaddr < old_sum_blkaddr + offset) {
 		blkaddr = new_sum_blkaddr;
@@ -333,7 +370,7 @@ static void migrate_nat(struct f2fs_sb_info *sbi,
 	void *nat_block;
 	int nid, ret, new_max_nid;
 	pgoff_t block_off;
-	pgoff_t block_addr;
+	pgoff_t block_addr, dst_block_addr;
 	int seg_off;
 
 	nat_block = malloc(BLOCK_SZ);
@@ -352,15 +389,19 @@ static void migrate_nat(struct f2fs_sb_info *sbi,
 			f2fs_clear_bit(block_off, nm_i->nat_bitmap);
 		}
 
+		dst_block_addr = (pgoff_t)(new_nat_blkaddr +
+			(seg_off << sbi->log_blocks_per_seg << 1) +
+			(block_off & ((1 << sbi->log_blocks_per_seg) - 1)));
+
+		/* No need to do migrate in place. */
+		if (dst_block_addr == block_addr) {
+			continue;
+		}
 		ret = dev_read_block(nat_block, block_addr);
 		ASSERT(ret >= 0);
 
-		block_addr = (pgoff_t)(new_nat_blkaddr +
-				(seg_off << sbi->log_blocks_per_seg << 1) +
-				(block_off & ((1 << sbi->log_blocks_per_seg) - 1)));
-
 		/* new bitmap should be zeros */
-		ret = dev_write_block(nat_block, block_addr);
+		ret = dev_write_block(nat_block, dst_block_addr);
 		ASSERT(ret >= 0);
 	}
 	/* zero out newly assigned nids */
@@ -404,7 +445,6 @@ static void migrate_sit(struct f2fs_sb_info *sbi,
 	int ret;
 
 	ASSERT(sit_blk);
-
 	/* initialize with zeros */
 	for (index = 0; index < sit_blks; index++) {
 		ret = dev_write_block(sit_blk, get_newsb(sit_blkaddr) + index);
@@ -458,9 +498,9 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 	unsigned int free_segment_count, new_segment_count;
 	block_t new_cp_blks = 1 + get_newsb(cp_payload);
 	block_t orphan_blks = 0;
-	block_t new_cp_blk_no, old_cp_blk_no;
+	block_t new_cp_blk_no, old_cp_blk_no, old_cp_bak_blk_no;
 	uint32_t crc = 0;
-	u32 flags;
+	u32 flags = get_cp(ckpt_flags);
 	void *buf;
 	int i, ret;
 
@@ -518,19 +558,15 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 			((get_newsb(segment_count_nat) / 2) <<
 			get_newsb(log_blocks_per_seg)) / 8);
 
-	/* update nat_bits flag */
-	flags = update_nat_bits_flags(new_sb, cp, get_cp(ckpt_flags));
-	if (c.large_nat_bitmap)
+	if (c.large_nat_bitmap) {
 		flags |= CP_LARGE_NAT_BITMAP_FLAG;
+		set_cp(ckpt_flags, flags);
+	}
 
-	if (flags & CP_COMPACT_SUM_FLAG)
-		flags &= ~CP_COMPACT_SUM_FLAG;
 	if (flags & CP_LARGE_NAT_BITMAP_FLAG)
 		set_cp(checksum_offset, CP_MIN_CHKSUM_OFFSET);
 	else
 		set_cp(checksum_offset, CP_CHKSUM_OFFSET);
-
-	set_cp(ckpt_flags, flags);
 
 	memcpy(new_cp, cp, (unsigned char *)cp->sit_nat_version_bitmap -
 						(unsigned char *)cp);
@@ -584,13 +620,13 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 	ret = dev_write_block(new_cp, new_cp_blk_no++);
 	ASSERT(ret >= 0);
 
-	/* Write nat bits */
-	if (flags & CP_NAT_BITS_FLAG)
-		write_nat_bits(sbi, new_sb, new_cp, sbi->cur_cp == 1 ? 2 : 1);
-
-	/* disable old checkpoint */
-	memset(buf, 0, BLOCK_SZ);
-	ret = dev_write_block(buf, old_cp_blk_no);
+	/* update crc of old checkpoint */
+	crc = f2fs_checkpoint_chksum(cp);
+	*((__le32 *)((unsigned char *)cp + get_cp(checksum_offset))) = cpu_to_le32(crc);
+	ret = dev_write_block(cp, old_cp_blk_no);
+	ASSERT(ret >= 0);
+	old_cp_bak_blk_no = old_cp_blk_no + get_cp(cp_pack_total_block_count) - 1;
+	ret = dev_write_block(cp, old_cp_bak_blk_no);
 	ASSERT(ret >= 0);
 
 	free(buf);
@@ -618,6 +654,41 @@ static int f2fs_resize_check(struct f2fs_sb_info *sbi, struct f2fs_super_block *
 	return 0;
 }
 
+/*
+ * old filesystem layout:
+ * | sb | cp |---sit---|----nat----|-----ssa-----|------main area------|
+ * When the partition size decreases, get_new_sb will yield such f2fs filesystem layout:
+ * get_new_sb filesystem layout:
+ * | sb | cp |---sit---|---nat---|-----ssa-----|---------main area--------|
+ * but resize.f2fs not support performing migration when the main_blkaddr moves forward,
+ * so we need to revert the old filesystem layout in old_sb, and only increase the segment
+ * and section count. The final layout is as follows:
+ * | sb | cp |---sit---|----nat----|-----ssa-----|--------main area-------|
+ * */
+static void revert_old_fs_layout(struct f2fs_sb_info *sbi, struct f2fs_super_block *sb, struct f2fs_super_block *new_sb)
+{
+	set_newsb(sit_blkaddr, get_sb(sit_blkaddr));
+	set_newsb(segment_count_sit, get_sb(segment_count_sit));
+	set_newsb(nat_blkaddr, get_sb(nat_blkaddr));
+	set_newsb(segment_count_nat, get_sb(segment_count_nat));
+	set_newsb(ssa_blkaddr, get_sb(ssa_blkaddr));
+	set_newsb(segment_count_ssa, get_sb(segment_count_ssa));
+	set_newsb(main_blkaddr, get_sb(main_blkaddr));
+
+	set_newsb(segment_count_main, get_newsb(segment_count -
+			(get_newsb(segment_count_ckpt) +
+			get_newsb(segment_count_sit) +
+			get_newsb(segment_count_nat) +
+			get_newsb(segment_count_ssa))));
+
+	set_newsb(section_count, get_newsb(segment_count_main) / get_newsb(segs_per_sec));
+	set_newsb(segment_count_main, get_newsb(section_count) * get_newsb(segs_per_sec));
+	set_newsb(cp_payload, get_sb(cp_payload));
+
+	c.new_overprovision = get_best_overprovision(new_sb);
+	c.new_reserved_segments = count_overprovision(sb);
+}
+
 static int f2fs_resize_grow(struct f2fs_sb_info *sbi)
 {
 	struct f2fs_super_block *sb = F2FS_RAW_SUPER(sbi);
@@ -634,6 +705,15 @@ static int f2fs_resize_grow(struct f2fs_sb_info *sbi)
 	memcpy(new_sb, F2FS_RAW_SUPER(sbi), sizeof(*new_sb));
 	if (get_new_sb(new_sb))
 		return -1;
+
+	/*
+	 * resize.f2fs not support main area to move forward, so here will reuse
+	 * f2fs filesystem layout from old sb.
+	 * */
+	if (get_newsb(main_blkaddr) < get_sb(main_blkaddr)) {
+		MSG(0, "Info: keep filesystem layout unchanged, only change main area size.\n");
+		revert_old_fs_layout(sbi, sb, new_sb);
+	}
 
 	if (f2fs_resize_check(sbi, new_sb) < 0)
 		return -1;
@@ -659,7 +739,7 @@ static int f2fs_resize_grow(struct f2fs_sb_info *sbi)
 						new_main_blkaddr, 0);
 		if (!err)
 			offset_seg = offset >> get_sb(log_blocks_per_seg);
-		MSG(0, "Try to do defragement: %s\n", err ? "Skip": "Done");
+		MSG(0, "Try to do defragment: %s\n", err ? "Skip": "Done");
 	}
 	/* move whole data region */
 	if (err)
@@ -745,19 +825,20 @@ int f2fs_resize(struct f2fs_sb_info *sbi)
 	struct f2fs_super_block *sb = F2FS_RAW_SUPER(sbi);
 
 	/* may different sector size */
-	if ((c.target_sectors * c.sector_size >>
-			get_sb(log_blocksize)) < get_sb(block_count))
+	unsigned long long cur_size = (get_sb(block_count) << get_sb(log_blocksize)) >> F2FS_GB_SHIFT;
+	unsigned long long target_size = (c.target_sectors * c.sector_size) >> F2FS_GB_SHIFT;
+	if ((c.target_sectors * c.sector_size >> get_sb(log_blocksize)) < get_sb(block_count))
 		if (!c.safe_resize) {
 			ASSERT_MSG("Nothing to resize, now only supports resizing with safe resize flag\n");
 			return -1;
 		} else {
+			f2fs_enable_large_nat_bitmap(sbi, target_size, cur_size);
 			return f2fs_resize_shrink(sbi);
 		}
-	else if (((c.target_sectors * c.sector_size >>
-			get_sb(log_blocksize)) > get_sb(block_count)) ||
-			c.force)
+	else if (((c.target_sectors * c.sector_size >> get_sb(log_blocksize)) > get_sb(block_count)) || c.force) {
+		f2fs_enable_large_nat_bitmap(sbi, target_size, cur_size);
 		return f2fs_resize_grow(sbi);
-	else {
+	} else {
 		MSG(0, "Nothing to resize.\n");
 		return 0;
 	}

@@ -18,10 +18,10 @@
 #define F2FS_MINOR_VERSION 14
 
 /* f2fs-tools date based on Source releases */
-#define F2FS_TOOLS_DATE "2023-04-11"
+#define F2FS_TOOLS_DATE "2022-05-13"
 
 /* f2fs-tools version */
-#define F2FS_TOOLS_VERSION "v1.16.0"
+#define F2FS_TOOLS_VERSION "1.15.0"
 
 /* Define to 1 if you have the `add_key' function. */
 /* #undef HAVE_ADD_KEY */
@@ -73,7 +73,7 @@
 /* #define HAVE_LIBSELINUX 1 */
 
 /* Define to 1 if you have the <linux/blkzoned.h> header file. */
-#define HAVE_LINUX_BLKZONED_H 1
+/* #define HAVE_LINUX_BLKZONED_H 1 */
 
 /* Define to 1 if you have the <linux/falloc.h> header file. */
 #define HAVE_LINUX_FALLOC_H 1
@@ -198,13 +198,17 @@
 /* Version number of package */
 #define VERSION "1.15.0"
 
-#define HAVE_UUID_UUID_H 1
+#define HAVE_CLOCK_GETTIME 1
 
-#define HAVE_LIBUUID 1
+#define HAVE_CLOCK_BOOTTIME 1
 
 #define WITH_BLKDISCARD 1
 
 #define HAVE_FSYNC 1
+
+#define HAVE_UUID_UUID_H 1
+
+#define HAVE_LIBUUID 1
 
 #define WITH_OHOS 1
 

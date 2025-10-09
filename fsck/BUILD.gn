@@ -16,6 +16,7 @@ config("f2fs-defaults") {
     "-Wno-unused-parameter",
     "-Wno-incompatible-pointer-types",
   ]
+  ldflags = [ "-lpthread" ]
 }
 
 ###################################################
@@ -23,8 +24,11 @@ config("f2fs-defaults") {
 ohos_executable("fsck.f2fs") {
   configs = [ ":f2fs-defaults" ]
   sources = [
+    "../lib/extra_fsck.c",
     "../tools/debug_tools/fsck_debug.c",
+    "../tools/f2fs_tools/f2fs_tools.c",
     "compress.c",
+    "dedup.c",
     "defrag.c",
     "dict.c",
     "dir.c",
@@ -41,11 +45,13 @@ ohos_executable("fsck.f2fs") {
     "segment.c",
     "sload.c",
     "xattr.c",
+    "queue.c"
   ]
 
   include_dirs = [
     ".",
     "../tools/debug_tools",
+    "../tools/f2fs_tools",
     "//third_party/f2fs-tools",
     "//third_party/f2fs-tools/include",
     "//third_party/f2fs-tools/lib",
@@ -53,8 +59,8 @@ ohos_executable("fsck.f2fs") {
 
   deps = [ "//third_party/f2fs-tools/lib:libf2fs" ]
 
-  public_external_deps = [
-    "e2fsprogs:e2fsdroid",
+  external_deps = [
+    "bounds_checking_function:libsec_static",
     "e2fsprogs:libdacconfig",
   ]
 
