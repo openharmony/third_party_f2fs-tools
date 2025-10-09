@@ -13,8 +13,10 @@
 #include "f2fs.h"
 
 void dump_sbi_info(struct f2fs_sb_info *);
-void hex_info_dump(const char *, const unsigned char *,
-	unsigned int);
+void hex_info_dump(const char *prompts, const unsigned char *buf,
+	unsigned int len);
+void dump_bitmap_diff(struct f2fs_sb_info *, const char *, const char *);
+extern struct seg_entry *get_seg_entry(struct f2fs_sb_info *, unsigned int);
 
 static inline unsigned int total_segments(struct f2fs_sb_info *sbi)
 {

@@ -686,22 +686,41 @@ int f2fs_init_sparse_file(void)
 #endif
 }
 
-void f2fs_release_sparse_resource(void)
+void f2fs_release_sparse_blocks(void)
 {
 #ifdef HAVE_SPARSE_SPARSE_H
 	int j;
 
+	if (blocks != NULL) {
+		for (j = 0; j < blocks_count; j++) {
+			if (blocks[j]) {
+				free(blocks[j]);
+				blocks[j] = NULL;
+			} else {
+				continue;
+			}
+		}
+		free(blocks);
+		blocks = NULL;
+	}
+#endif
+}
+
+void f2fs_release_sparse_resource(void)
+{
+#ifdef HAVE_SPARSE_SPARSE_H
 	if (c.sparse_mode) {
 		if (f2fs_sparse_file != NULL) {
 			sparse_file_destroy(f2fs_sparse_file);
 			f2fs_sparse_file = NULL;
 		}
-		for (j = 0; j < blocks_count; j++)
-			free(blocks[j]);
-		free(blocks);
-		blocks = NULL;
-		free(zeroed_block);
-		zeroed_block = NULL;
+
+		f2fs_release_sparse_blocks();
+
+		if (zeroed_block != NULL) {
+			free(zeroed_block);
+			zeroed_block = NULL;
+		}
 	}
 #endif
 }

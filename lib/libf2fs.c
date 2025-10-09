@@ -542,7 +542,6 @@ uint32_t f2fs_cal_crc32(uint32_t crc, void *buf, int len)
 int f2fs_crc_valid(uint32_t blk_crc, void *buf, int len)
 {
 	uint32_t cal_crc = 0;
-
 	cal_crc = f2fs_cal_crc32(F2FS_SUPER_MAGIC, buf, len);
 
 	if (cal_crc != blk_crc)	{
@@ -1295,6 +1294,8 @@ unsigned int calc_extra_isize(void)
 	if (c.feature & cpu_to_le32(F2FS_FEATURE_INODE_CRTIME))
 		size = offsetof(struct f2fs_inode, i_compr_blocks);
 	if (c.feature & cpu_to_le32(F2FS_FEATURE_COMPRESSION))
+		size = offsetof(struct f2fs_inode, i_inner_ino);
+	if (c.feature & cpu_to_le32(F2FS_FEATURE_DEDUP))
 		size = offsetof(struct f2fs_inode, i_extra_end);
 
 	return size - F2FS_EXTRA_ISIZE_OFFSET;

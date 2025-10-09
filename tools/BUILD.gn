@@ -26,11 +26,10 @@ ohos_executable("f2fscrypt") {
     ".",
     "//third_party/f2fs-tools",
     "//third_party/f2fs-tools/include",
-    "//third_party/e2fsprogs/e2fsprogs/lib/uuid",
   ]
   cflags = [ "-Wno-error=format-extra-args" ]
 
-  deps = [ "//third_party/e2fsprogs:libext2_uuid" ]
+  external_deps = [ "e2fsprogs:libext2_uuid" ]
 
   install_enable = true
   subsystem_name = "thirdparty"

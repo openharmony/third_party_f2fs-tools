@@ -30,7 +30,7 @@
 #include <blkid/blkid.h>
 #endif
 #ifdef HAVE_UUID_UUID_H
-#include <uuid.h>
+#include <uuid/uuid.h>
 #endif
 
 #include "quota.h"
@@ -110,6 +110,9 @@ static void f2fs_show_info()
 
 	if (c.feature & le32_to_cpu(F2FS_FEATURE_COMPRESSION))
 		MSG(0, "Info: Enable Compression\n");
+
+	if (c.feature & le32_to_cpu(F2FS_FEATURE_DEDUP))
+		MSG(0, "Info: Enable Dedup\n");
 }
 
 #if defined(ANDROID_TARGET) && defined(HAVE_SYS_UTSNAME_H)
@@ -332,6 +335,11 @@ static void f2fs_parse_options(int argc, char *argv[])
 				"enabled with extra attr feature\n");
 			exit(1);
 		}
+		if (c.feature & cpu_to_le32(F2FS_FEATURE_DEDUP)) {
+			MSG(0, "\tInfo: dedup feature should always be "
+				"enabled with extra attr feature\n");
+			exit(1);
+		}
 	}
 
 	if (optind >= argc) {
@@ -448,6 +456,11 @@ int main(int argc, char *argv[])
 
 	if (f2fs_get_device_info() < 0)
 		return -1;
+
+	unsigned long long total_size = (c.total_sectors * c.sector_size) >> F2FS_GB_SHIFT;
+	if (total_size > F2FS_LARGE_NAT_BITMAP_MIN_SIZE) {
+		c.large_nat_bitmap = 1;
+	}
 
 	if (f2fs_check_overwrite()) {
 		char *zero_buf = NULL;

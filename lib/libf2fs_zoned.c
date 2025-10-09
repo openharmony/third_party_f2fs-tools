@@ -352,7 +352,7 @@ int f2fs_check_zones(int j)
 			}
 
 			if (blk_zone_conv(blkz)) {
-				DBG(2, "Zone %05u: Conventional, cond 0x%x (%s), sector %llu, %llu sectors\n", 
+				DBG(2, "Zone %05u: Conventional, cond 0x%x (%s), sector %llu, %llu sectors\n",
 				    n, blk_zone_cond(blkz),
 				    blk_zone_cond_str(blkz),
 				    blk_zone_sector(blkz),
