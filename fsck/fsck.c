@@ -800,16 +800,16 @@ check_next:
 		if (c.feature & cpu_to_le32(F2FS_FEATURE_EXTRA_ATTR)) {
 			unsigned int isize =
 				le16_to_cpu(node_blk->i.i_extra_isize);
-			unsigned int expect_extra_isize = calc_extra_isize();
-			if (isize > expect_extra_isize) {
+			if (isize > 4 * DEF_ADDRS_PER_INODE) {
 				ASSERT_MSG("[0x%x] wrong i_extra_isize=0x%x",
 						nid, isize);
 				if (c.fix_on) {
 					FIX_MSG("ino[0x%x] recover i_extra_isize "
 						"from %u to %u",
-						nid, isize, expect_extra_isize);
+						nid, isize,
+						calc_extra_isize());
 					node_blk->i.i_extra_isize =
-						cpu_to_le16(expect_extra_isize);
+						cpu_to_le16(calc_extra_isize());
 					need_fix = 1;
 				}
 			}
