@@ -24,10 +24,8 @@
         "rom": "",
         "ram": "",
         "deps": {
-            "components": [],
-            "third_party": [
-              "e2fsprogs"
-            ]
+            "components": [ "e2fsprogs" ],
+            "third_party": []
         },
         "build": {
             "sub_component": [],
