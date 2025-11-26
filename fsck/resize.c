@@ -670,6 +670,7 @@ static int f2fs_resize_grow(struct f2fs_sb_info *sbi)
 	migrate_sit(sbi, new_sb, offset_seg);
 	rebuild_checkpoint(sbi, new_sb, offset_seg);
 	update_superblock(new_sb, SB_MASK_ALL);
+	print_total_sectors(new_sb, sbi->log_sectors_per_block);
 	print_raw_sb_info(sb);
 	print_raw_sb_info(new_sb);
 
@@ -734,6 +735,7 @@ static int f2fs_resize_shrink(struct f2fs_sb_info *sbi)
 	/* move whole data region */
 	//if (err)
 	//	migrate_main(sbi, offset);
+	print_total_sectors(new_sb, sbi->log_sectors_per_block);
 	print_raw_sb_info(sb);
 	print_raw_sb_info(new_sb);
 
