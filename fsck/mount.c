@@ -377,6 +377,13 @@ static void DISP_label(uint16_t *name)
 		printf("%-30s" "\t\t[%s]\n", "volum_name", buffer);
 }
 
+void print_total_sectors(struct f2fs_super_block *sb, unsigned int log_sectors_per_block)
+{
+	u64 total_sectors = get_sb(block_count) << log_sectors_per_block;
+	MSG(0, "Info: new total FS sectors = %"PRIu64" (%"PRIu64" MB)\n",
+			total_sectors, total_sectors >> (20 - get_sb(log_sectorsize)));
+}
+
 void print_raw_sb_info(struct f2fs_super_block *sb)
 {
 	if (c.layout)
