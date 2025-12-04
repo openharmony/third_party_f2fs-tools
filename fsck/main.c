@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include "quotaio.h"
 #include "compress.h"
+#include "dedup.h"
 
 struct f2fs_fsck gfsck;
 
@@ -850,7 +851,7 @@ static int do_fsck(struct f2fs_sb_info *sbi)
 	struct f2fs_compr_blk_cnt cbc;
 	errcode_t ret;
 
-	fsck_init(sbi);
+	fsck_init(sbi, true);
 
 	print_cp_state(flag);
 
@@ -862,12 +863,13 @@ static int do_fsck(struct f2fs_sb_info *sbi)
 		switch (c.preen_mode) {
 		case PREEN_MODE_1:
 			if (fsck_chk_meta(sbi)) {
-				MSG(0, "[FSCK] F2FS metadata   [Fail]");
+				DMD_ADD_ERROR(LOG_TYP_FSCK, PR_FSCK_META_MISMATCH);
+				MSG(0, "[FSCK] F2FS metadata   [Fail]\n");
 				MSG(0, "\tError: meta does not match, "
 					"force check all\n");
 			} else {
-				MSG(0, "[FSCK] F2FS metadata   [Ok..]");
-				fsck_free(sbi);
+				MSG(0, "[FSCK] F2FS metadata   [Ok..]\n");
+				fsck_free(sbi, true);
 				return FSCK_SUCCESS;
 			}
 
@@ -889,6 +891,10 @@ static int do_fsck(struct f2fs_sb_info *sbi)
 		c.fix_on = 1;
 	}
 
+	if (c.fix_on || c.bug_on) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_FULL_DISK_FSCK);
+	}
+
 	fsck_chk_checkpoint(sbi);
 
 	fsck_chk_quota_node(sbi);
@@ -908,10 +914,11 @@ static int do_fsck(struct f2fs_sb_info *sbi)
 	fsck_chk_orphan_node(sbi);
 	fsck_chk_node_blk(sbi, NULL, sbi->root_ino_num,
 			F2FS_FT_DIR, TYPE_INODE, &blk_cnt, &cbc, NULL);
+	f2fs_fix_dedup_inner_list(sbi);
 	fsck_chk_quota_files(sbi);
 
 	ret = fsck_verify(sbi);
-	fsck_free(sbi);
+	fsck_free(sbi, true);
 
 	if (!c.bug_on)
 		return FSCK_SUCCESS;
@@ -1016,6 +1023,7 @@ static int do_resize(struct f2fs_sb_info *sbi)
 	if (c.target_sectors > c.total_sectors) {
 		ASSERT_MSG("Out-of-range Target=0x%"PRIx64" / 0x%"PRIx64"",
 				c.target_sectors, c.total_sectors);
+		g_logI.needTruncate = 1;
 		return -1;
 	}
 
@@ -1119,13 +1127,24 @@ int main(int argc, char **argv)
 	struct f2fs_sb_info *sbi;
 	int ret = 0, ret2;
 	u64 start = get_boottime_ns();
+	u64 end;
+	u64 cost_ms;
 
 	f2fs_init_configuration();
 
 	f2fs_parse_options(argc, argv);
 
+	if (SlogInit(c.func) < 0) {
+		/* should not exit. fsck may have no permissions for
+		 * log or splash2 partition.
+		 */
+		printf("Failed to init slog\n");
+	}
+	MSG(0, "Start time: %llu ns\n", start);
+
 	if (c.func != DUMP && f2fs_devs_are_umounted() < 0) {
 		if (errno == EBUSY) {
+			SlogExit();
 			ret = -1;
 			if (c.func == FSCK)
 				ret = FSCK_OPERATIONAL_ERROR;
@@ -1133,6 +1152,7 @@ int main(int argc, char **argv)
 		}
 		if (!c.ro || c.func == DEFRAG) {
 			MSG(0, "\tError: Not available on mounted device!\n");
+			SlogExit();
 			ret = -1;
 			if (c.func == FSCK)
 				ret = FSCK_OPERATIONAL_ERROR;
@@ -1151,6 +1171,7 @@ int main(int argc, char **argv)
 
 	/* Get device */
 	if (f2fs_get_device_info() < 0 || f2fs_get_f2fs_info() < 0) {
+		SlogExit();
 		ret = -1;
 		if (c.func == FSCK)
 			ret = FSCK_OPERATIONAL_ERROR;
@@ -1189,13 +1210,15 @@ fsck_again:
 #endif
 #ifdef WITH_RESIZE
 	case RESIZE:
-		if (do_resize(sbi))
+		ret = do_resize(sbi);
+		if (ret)
 			goto out_err;
 		break;
 #endif
 #ifdef WITH_SLOAD
 	case SLOAD:
-		if (do_sload(sbi))
+		ret = do_sload(sbi);
+		if (ret)
 			goto out_err;
 
 		ret = f2fs_sparse_initialize_meta(sbi);
@@ -1242,6 +1265,7 @@ retry:
 	}
 	ret2 = f2fs_finalize_device();
 	if (ret2) {
+		F2FS_EXT_EXIT();
 		if (c.func == FSCK)
 			return FSCK_OPERATIONAL_ERROR;
 		return ret2;
@@ -1250,11 +1274,20 @@ retry:
 	if (c.func == SLOAD)
 		c.compress.filter_ops->destroy();
 
-	if (!c.show_file_map)
-		printf("\nDone: %lf secs\n", (get_boottime_ns() - start) / 1000000000.0);
-	return ret;
-
 out_err:
+	end = get_boottime_ns();
+	MSG(0, "End time: %llu ns\n", end);
+
+	cost_ms = (end - start) / (1000000);
+	MSG(0, "Cost time: %llu ms\n", cost_ms);
+	DMD_CHECK_COST_TIME(sbi, cost_ms);
+
+	F2FS_EXT_EXIT();
+
+	if (!ret || c.func == FSCK) {
+		return ret;
+	}
+
 	if (sbi->ckpt)
 		free(sbi->ckpt);
 	if (sbi->raw_super)

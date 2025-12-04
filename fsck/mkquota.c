@@ -320,6 +320,9 @@ static int scan_dquots_callback(struct dquot *dquot, void *cb_data)
 	struct scan_dquots_data *scan_data = cb_data;
 	dict_t *quota_dict = scan_data->quota_dict;
 	struct dquot *dq;
+	static int unmatched_num = 0;
+	/* Only display 10 records. Otherwise, the log buffer overflows. */
+	const int max_printed = 10;
 
 	dq = get_dq(quota_dict, dquot->dq_id);
 	dq->dq_id = dquot->dq_id;
@@ -337,6 +340,15 @@ static int scan_dquots_callback(struct dquot *dquot, void *cb_data)
 				(long long) dq->dq_dqb.dqb_curinodes,
 				(long long) dquot->dq_dqb.dqb_curspace,
 				(long long) dquot->dq_dqb.dqb_curinodes);
+		if (unmatched_num < max_printed) {
+			MSG(0, "[QUOTA WARNING] Usage inconsistent for ID %u:"
+				"scaned (%lld, %lld) != quota file (%lld, %lld)\n",
+				dq->dq_id, (long long) dq->dq_dqb.dqb_curspace,
+				(long long) dq->dq_dqb.dqb_curinodes,
+				(long long) dquot->dq_dqb.dqb_curspace,
+				(long long) dquot->dq_dqb.dqb_curinodes);
+			unmatched_num++;
+		}
 	}
 
 	if (scan_data->update_limits) {

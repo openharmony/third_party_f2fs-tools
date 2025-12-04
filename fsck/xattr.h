@@ -127,20 +127,33 @@ static inline int f2fs_acl_count(int size)
 #define ENTRY_SIZE(entry) (XATTR_ALIGN(sizeof(struct f2fs_xattr_entry) + \
 			entry->e_name_len + le16_to_cpu(entry->e_value_size)))
 
-#define list_for_each_xattr(entry, addr) \
+#define VALID_XATTR_BLOCK_SIZE	(F2FS_BLKSIZE - sizeof(struct node_footer))
+
+#define XATTR_SIZE(i)	((le32_to_cpu((i)->i_xattr_nid) ?	\
+							VALID_XATTR_BLOCK_SIZE : 0) +	\
+								(inline_xattr_size(i)))
+
+#define NOT_EXCEED_XATTR_BOUNDARY(entry, addr, max_total_xattr_size)  \
+	((char *) (entry) - (char *) (addr) < (max_total_xattr_size))
+
+#define IS_VALID_ENTRY(entry, addr, max_total_xattr_size) \
+	NOT_EXCEED_XATTR_BOUNDARY(entry, addr, max_total_xattr_size) && \
+			!IS_XATTR_LAST_ENTRY(entry)
+
+#define list_for_each_xattr(entry, addr, max_total_xattr_size) \
 	for (entry = XATTR_FIRST_ENTRY(addr); \
-			!IS_XATTR_LAST_ENTRY(entry); \
+			IS_VALID_ENTRY(entry, addr, max_total_xattr_size); \
 			entry = XATTR_NEXT_ENTRY(entry))
 
 #define MIN_OFFSET	XATTR_ALIGN(F2FS_BLKSIZE -		\
-		sizeof(struct node_footer) - sizeof(__u32))
+		sizeof(struct node_footer))
 
 #define MAX_XATTR_BLOCK_SIZE (F2FS_BLKSIZE - sizeof(struct node_footer))
 
 #define MAX_XATTR_SIZE(inode) (XATTR_ALIGN((MAX_INLINE_XATTR_SIZE(inode)) + \
-		(MAX_XATTR_BLOCK_SIZE)))
+	(MAX_XATTR_BLOCK_SIZE)))
 
-#define MAX_VALUE_LEN(inode)	(MAX_XATTR_SIZE(inode) -			\
+#define MAX_VALUE_LEN(inode)	(MAX_XATTR_SIZE(inode) -		\
 		sizeof(struct f2fs_xattr_header) -		\
 		sizeof(struct f2fs_xattr_entry))
 

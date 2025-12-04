@@ -8,10 +8,14 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+#include <time.h>
 #include "fsck.h"
 #include "xattr.h"
 #include "quotaio.h"
-#include <time.h>
+#include "dedup.h"
+#include "extra_fsck.h"
+#include "fsck_debug.h"
+#include "securec.h"
 
 char *tree_mark;
 uint32_t tree_mark_size = 256;
@@ -30,6 +34,7 @@ int f2fs_set_main_bitmap(struct f2fs_sb_info *sbi, u32 blk, int type)
 
 	/* just check data and node types */
 	if (fix) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_SIT_TYPE_IS_ERROR);
 		DBG(1, "Wrong segment type [0x%x] %x -> %x",
 				GET_SEGNO(sbi, blk), se->type, type);
 		se->type = type;
@@ -37,7 +42,7 @@ int f2fs_set_main_bitmap(struct f2fs_sb_info *sbi, u32 blk, int type)
 	return f2fs_set_bit(BLKOFF_FROM_MAIN(sbi, blk), fsck->main_area_bitmap);
 }
 
-static inline int f2fs_test_main_bitmap(struct f2fs_sb_info *sbi, u32 blk)
+int f2fs_test_main_bitmap(struct f2fs_sb_info *sbi, u32 blk)
 {
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 
@@ -45,7 +50,7 @@ static inline int f2fs_test_main_bitmap(struct f2fs_sb_info *sbi, u32 blk)
 						fsck->main_area_bitmap);
 }
 
-static inline int f2fs_clear_main_bitmap(struct f2fs_sb_info *sbi, u32 blk)
+int f2fs_clear_main_bitmap(struct f2fs_sb_info *sbi, u32 blk)
 {
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 
@@ -65,6 +70,13 @@ int f2fs_set_sit_bitmap(struct f2fs_sb_info *sbi, u32 blk)
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 
 	return f2fs_set_bit(BLKOFF_FROM_MAIN(sbi, blk), fsck->sit_area_bitmap);
+}
+
+static inline int f2fs_clear_sit_bitmap(struct f2fs_sb_info *sbi, u32 blk)
+{
+	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
+
+	return f2fs_clear_bit(BLKOFF_FROM_MAIN(sbi, blk), fsck->sit_area_bitmap);
 }
 
 static int add_into_hard_link_list(struct f2fs_sb_info *sbi,
@@ -158,7 +170,13 @@ static int is_valid_ssa_node_blk(struct f2fs_sb_info *sbi, u32 nid,
 	segno = GET_SEGNO(sbi, blk_addr);
 	offset = OFFSET_IN_SEG(sbi, blk_addr);
 
-	sum_blk = get_sum_block(sbi, segno, &type);
+	sum_blk = get_sum_node_block_from_cache(sbi, segno, &type);
+	if (!sum_blk) {
+		/* do not free the sum_blk, it is saved to cache, and will
+		 * be freed when cache is destroied
+		 */
+		sum_blk = get_sum_block(sbi, segno, &type);
+	}
 
 	if (type != SEG_TYPE_NODE && type != SEG_TYPE_CUR_NODE) {
 		/* can't fix current summary, then drop the block */
@@ -212,9 +230,6 @@ static int is_valid_ssa_node_blk(struct f2fs_sb_info *sbi, u32 nid,
 		ASSERT(ret2 >= 0);
 	}
 out:
-	if (type == SEG_TYPE_NODE || type == SEG_TYPE_DATA ||
-					type == SEG_TYPE_MAX)
-		free(sum_blk);
 	return ret;
 }
 
@@ -231,8 +246,10 @@ static int is_valid_summary(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	node_blk = (struct f2fs_node *)calloc(BLOCK_SZ, 1);
 	ASSERT(node_blk != NULL);
 
-	if (!IS_VALID_NID(sbi, nid))
+	if (!IS_VALID_NID(sbi, nid)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_NID);
 		goto out;
+	}
 
 	get_node_info(sbi, nid, &ni);
 
@@ -283,7 +300,13 @@ static int is_valid_ssa_data_blk(struct f2fs_sb_info *sbi, u32 blk_addr,
 	segno = GET_SEGNO(sbi, blk_addr);
 	offset = OFFSET_IN_SEG(sbi, blk_addr);
 
-	sum_blk = get_sum_block(sbi, segno, &type);
+	sum_blk = get_sum_data_block_from_cache(sbi, segno, &type);
+	if (!sum_blk) {
+		/* do not free the sum_blk, it is saved to cache, and will
+		 * be freed when cache is destroied
+		 */
+		sum_blk = get_sum_block(sbi, segno, &type);
+	}
 
 	if (type != SEG_TYPE_DATA && type != SEG_TYPE_CUR_DATA) {
 		/* can't fix current summary, then drop the block */
@@ -346,9 +369,6 @@ static int is_valid_ssa_data_blk(struct f2fs_sb_info *sbi, u32 blk_addr,
 		ASSERT(ret2 >= 0);
 	}
 out:
-	if (type == SEG_TYPE_NODE || type == SEG_TYPE_DATA ||
-					type == SEG_TYPE_MAX)
-		free(sum_blk);
 	return ret;
 }
 
@@ -386,31 +406,37 @@ err:
 	return -1;
 }
 
-static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
+int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 			struct f2fs_node *node_blk,
 			enum FILE_TYPE ftype, enum NODE_TYPE ntype,
 			struct node_info *ni)
 {
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 	int ret;
+	nid_t inner_ino;
+	bool dedup_supported = c.feature & cpu_to_le32(F2FS_FEATURE_DEDUP);
 
 	if (!IS_VALID_NID(sbi, nid)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_NID);
 		ASSERT_MSG("nid is not valid. [0x%x]", nid);
 		return -EINVAL;
 	}
 
 	get_node_info(sbi, nid, ni);
 	if (ni->ino == 0) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INO_IS_ZERO);
 		ASSERT_MSG("nid[0x%x] ino is 0", nid);
 		return -EINVAL;
 	}
 
 	if (ni->blk_addr == NEW_ADDR) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_BLKADDR_IS_NEW_ADDR);
 		ASSERT_MSG("nid is NEW_ADDR. [0x%x]", nid);
 		return -EINVAL;
 	}
 
 	if (!IS_VALID_BLK_ADDR(sbi, ni->blk_addr)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NODE_INVALID_BLKADDR);
 		ASSERT_MSG("blkaddress is not valid. [0x%x]", ni->blk_addr);
 		return -EINVAL;
 	}
@@ -418,20 +444,39 @@ static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 	ret = dev_read_block(node_blk, ni->blk_addr);
 	ASSERT(ret >= 0);
 
+	if (dedup_supported && ftype == F2FS_FT_DEDUP_INNER && ntype == TYPE_INODE) {
+		if (!f2fs_is_deduped_inode(node_blk) ||
+				!f2fs_is_inner_inode(node_blk)) {
+			ASSERT_MSG("nid is not a valid inner inode. [0x%x]", nid);
+			return -EINVAL;
+		}
+	}
+	/*
+	 * Do not check the revoked orphan node.
+	 * It will be checked in the normal process.
+	 */
+	if (dedup_supported && ftype == F2FS_FT_ORPHAN &&
+			f2fs_is_unstable_dedup_inode(node_blk)) {
+		return 0;
+	}
+
 	if (ntype == TYPE_INODE &&
 			node_blk->footer.nid != node_blk->footer.ino) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INODE_FOOTER_INO_NOT_EQUAL_NID);
 		ASSERT_MSG("nid[0x%x] footer.nid[0x%x] footer.ino[0x%x]",
 				nid, le32_to_cpu(node_blk->footer.nid),
 				le32_to_cpu(node_blk->footer.ino));
 		return -EINVAL;
 	}
 	if (ni->ino != le32_to_cpu(node_blk->footer.ino)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NODE_INO_NOT_EQUAL_FOOTER_INO);
 		ASSERT_MSG("nid[0x%x] nat_entry->ino[0x%x] footer.ino[0x%x]",
 				nid, ni->ino, le32_to_cpu(node_blk->footer.ino));
 		return -EINVAL;
 	}
 	if (ntype != TYPE_INODE &&
 			node_blk->footer.nid == node_blk->footer.ino) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NON_INODE_FOOTER_INO_EQUAL_NID);
 		ASSERT_MSG("nid[0x%x] footer.nid[0x%x] footer.ino[0x%x]",
 				nid, le32_to_cpu(node_blk->footer.nid),
 				le32_to_cpu(node_blk->footer.ino));
@@ -439,6 +484,7 @@ static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 	}
 
 	if (le32_to_cpu(node_blk->footer.nid) != nid) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NODE_NID_NOT_EQUAL_FOOTER_NID);
 		ASSERT_MSG("nid[0x%x] blk_addr[0x%x] footer.nid[0x%x]",
 				nid, ni->blk_addr,
 				le32_to_cpu(node_blk->footer.nid));
@@ -449,6 +495,7 @@ static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 		u32 flag = le32_to_cpu(node_blk->footer.flag);
 
 		if ((flag >> OFFSET_BIT_SHIFT) != XATTR_NODE_OFFSET) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_XATTR_OFFSET);
 			ASSERT_MSG("xnid[0x%x] has wrong ofs:[0x%x]",
 					nid, flag);
 			return -EINVAL;
@@ -459,6 +506,7 @@ static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 			(ntype == TYPE_XATTR && ftype == F2FS_FT_XATTR)) {
 		/* not included '.' & '..' */
 		if (f2fs_test_main_bitmap(sbi, ni->blk_addr) != 0) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_DUPLICATE_NODE_BLKADDR_IN_MAIN_BITMAP);
 			ASSERT_MSG("Duplicated node blk. nid[0x%x][0x%x]\n",
 					nid, ni->blk_addr);
 			return -EINVAL;
@@ -470,8 +518,18 @@ static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 		return 0;
 
 	if (ntype == TYPE_INODE &&
-		__check_inode_mode(nid, ftype, le16_to_cpu(node_blk->i.i_mode)))
+		__check_inode_mode(nid, ftype, le16_to_cpu(node_blk->i.i_mode))) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INODE_MISMATCH_MODE);
 		return -EINVAL;
+	}
+
+	if (dedup_supported && f2fs_is_out_inode(node_blk)) {
+		inner_ino = f2fs_get_dedup_inner_ino(node_blk);
+		if (!f2fs_sanity_check_dedup_inner_nid(sbi, inner_ino)) {
+			ASSERT_MSG("inner inode is not valid. [0x%x]", inner_ino);
+			return -EINVAL;
+		}
+	}
 
 	/* workaround to fix later */
 	if (ftype != F2FS_FT_ORPHAN ||
@@ -479,18 +537,23 @@ static int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 		f2fs_clear_bit(nid, fsck->nat_area_bitmap);
 		/* avoid reusing nid when reconnecting files */
 		f2fs_set_bit(nid, NM_I(sbi)->nid_bitmap);
-	} else
+	} else {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_DUPLICATE_ORPHAN_OR_XATTR_NID);
 		ASSERT_MSG("orphan or xattr nid is duplicated [0x%x]\n",
 				nid);
+	}
 
 	if (is_valid_ssa_node_blk(sbi, nid, ni->blk_addr)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_SUM_NODE_BLOCK);
 		ASSERT_MSG("summary node block is not valid. [0x%x]", nid);
 		return -EINVAL;
 	}
 
-	if (f2fs_test_sit_bitmap(sbi, ni->blk_addr) == 0)
+	if (f2fs_test_sit_bitmap(sbi, ni->blk_addr) == 0) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAT_BLKADDR_OUT_SIT_BITMAP);
 		ASSERT_MSG("SIT bitmap is 0x0. blk_addr[0x%x]",
 				ni->blk_addr);
+	}
 
 	if (f2fs_test_main_bitmap(sbi, ni->blk_addr) == 0) {
 
@@ -549,6 +612,86 @@ out:
 	free(node_blk);
 	return ret;
 }
+
+static int fsck_chk_xattr_entries(struct f2fs_sb_info *sbi,
+				  struct f2fs_node *node)
+{
+	struct f2fs_inode *inode = &node->i;
+	void *xattr_blk;
+	struct f2fs_xattr_entry *ent;
+	nid_t ino = le32_to_cpu(node->footer.ino);
+	size_t max_xattr_size, offs = 0, inline_size = (size_t)inline_xattr_size(inode);
+	int err = 0;
+	int i = 0, size = 0;
+	u8 *value;
+	u64 max_total_xattr_size = XATTR_SIZE(inode);
+
+	if (inode->i_xattr_nid) {
+		max_xattr_size = inline_size + MIN_OFFSET;
+	} else {
+		max_xattr_size = inline_size;
+	}
+	if (max_xattr_size == 0) {
+		return 0;
+	}
+	xattr_blk = read_all_xattrs(sbi, node, false);
+	ASSERT(xattr_blk);
+	list_for_each_xattr(ent, xattr_blk, max_total_xattr_size) {
+		offs = (char *)ent - (char *)xattr_blk;
+		if (le16_to_cpu(ent->e_value_size) > MAX_VALUE_LEN(inode)) {
+			ASSERT_MSG("inode[0x%x] has wrong xattr e_value_size 0x%x",
+				ino, le16_to_cpu(ent->e_value_size));
+			err = -ERANGE;
+			break;
+		} else if (offs + ENTRY_SIZE(ent) > max_xattr_size) {
+			ASSERT_MSG("inode[0x%x] xattr (offs %zu size %zu) exceeds max xattr size(%zu)",
+				ino, offs, ENTRY_SIZE(ent), max_xattr_size);
+			size = le16_to_cpu(ent->e_value_size);
+			value = (u8 *)&ent->e_name[ent->e_name_len];
+			MSG(0, "  xattr: e_name_index:%d e_name:", ent->e_name_index);
+			for (i = 0; i < ent->e_name_len; i++)
+				MSG(0, "%c", ent->e_name[i]);
+			MSG(0, " e_name_len:%d e_value_size:%d e_value:\n",
+				ent->e_name_len, size);
+			for (i = 0; i < size; i++)
+				MSG(0, "%02X", value[i]);
+			MSG(0, "\n");
+			err = -ERANGE;
+			break;
+		}
+	}
+
+	if (err) {
+		struct node_info ni;
+		nid_t xattr_nid = le32_to_cpu(inode->i_xattr_nid);
+		int ret;
+
+		DBG(0, "inode[0x%x] remove xattrs from offset %zu\n", ino, offs);
+
+		if (inline_size && offs <= inline_size) {
+			memset_s((char *)inline_xattr_addr(inode) + offs, inline_size - offs, 0, inline_size - offs);
+			FIX_MSG("inode[0x%x] write inline xattr entries [0x%x]", ino, xattr_nid);
+		} else {
+			err = 0;
+		}
+		if (xattr_nid && c.fix_on) {
+			/* set 4 bytes before node_footer as 0 diretly */
+			size_t left = inline_size + BLOCK_SZ - offs -
+				sizeof(struct node_footer);
+			memset_s(ent, left, 0, left);
+			get_node_info(sbi, xattr_nid, &ni);
+			ret = dev_write_block((char *)xattr_blk + inline_size, ni.blk_addr);
+			ASSERT(ret >= 0);
+			FIX_MSG("inode[0x%x] write xattr node block [0x%x]",
+				ino, xattr_nid);
+		}
+		DBG(0, "inode[0x%x] remove corrupted xattr entry succes!\n", ino);
+	}
+
+	free(xattr_blk);
+	return err;
+}
+
 
 int fsck_chk_node_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 		u32 nid, enum FILE_TYPE ftype, enum NODE_TYPE ntype,
@@ -669,7 +812,7 @@ void fsck_reada_node_block(struct f2fs_sb_info *sbi, u32 nid)
 	if (nid != 0 && IS_VALID_NID(sbi, nid)) {
 		get_node_info(sbi, nid, &ni);
 		if (IS_VALID_BLK_ADDR(sbi, ni.blk_addr))
-			dev_reada_block(ni.blk_addr);
+			queue_reada_block(sbi, ni.blk_addr, NODE);
 	}
 }
 
@@ -683,6 +826,36 @@ void fsck_reada_all_direct_node_blocks(struct f2fs_sb_info *sbi,
 
 		fsck_reada_node_block(sbi, nid);
 	}
+}
+
+bool is_special_orphan_file(struct f2fs_inode *inode, enum FILE_TYPE ftype)
+{
+    u16 mode = le16_to_cpu(inode->i_mode);
+    if (ftype == F2FS_FT_ORPHAN && (S_ISCHR(mode) ||
+	    S_ISBLK(mode) || S_ISFIFO(mode) || S_ISSOCK(mode))) {
+	    return true;
+    }
+    return false;
+}
+
+static int missing_inline_xattr(struct f2fs_inode *inode)
+{
+	int idx = DEF_ADDRS_PER_INODE - get_inline_xattr_addrs(inode);
+	u32 magic, refcount;
+
+	if (inode->i_inline & F2FS_INLINE_XATTR) {
+		return 0;
+	}
+	if (idx >= DEF_ADDRS_PER_INODE - 1) {
+		return 0;
+	}
+
+	magic = le32_to_cpu(inode->i_addr[idx]);
+	refcount = le32_to_cpu(inode->i_addr[idx + 1]);
+	if ((magic == F2FS_XATTR_MAGIC) && (refcount == 1)) {
+		return 1;
+	}
+	return 0;
 }
 
 /* start with valid nid and blkaddr */
@@ -703,6 +876,8 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 	bool compr_rel = node_blk->i.i_inline & F2FS_COMPRESS_RELEASED;
 	u64 i_compr_blocks = le64_to_cpu(node_blk->i.i_compr_blocks);
 	nid_t i_xattr_nid = le32_to_cpu(node_blk->i.i_xattr_nid);
+	uint8_t i_log_cluster_size = node_blk->i.i_log_cluster_size;
+	uint8_t i_compress_algrithm = node_blk->i.i_compress_algrithm;
 	int ofs;
 	char *en;
 	u32 namelen;
@@ -711,11 +886,19 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 	int need_fix = 0;
 	int ret;
 	u32 cluster_size = 1 << node_blk->i.i_log_cluster_size;
+	bool dedup_supported = c.feature & cpu_to_le32(F2FS_FEATURE_DEDUP);
+	nid_t inner_ino;
 
-	if (!compressed)
-		goto check_next;
+	/*
+	 * Do not check the revoked orphan node.
+	 * It will be checked in the normal process.
+	 */
+	if (dedup_supported && ftype == F2FS_FT_ORPHAN &&
+			f2fs_is_unstable_dedup_inode(node_blk)) {
+		return;
+	}
 
-	if (!compr_supported || (node_blk->i.i_inline & F2FS_INLINE_DATA)) {
+	if (!compr_supported && compressed) {
 		/*
 		 * The 'compression' flag in i_flags affects the traverse of
 		 * the node tree.  Thus, it must be fixed unconditionally
@@ -730,7 +913,37 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 		}
 		i_flags &= ~F2FS_COMPR_FL;
 	}
-check_next:
+
+	/*
+	 * The 'compress_algorithm' and 'log_cluster_size' is fixed to
+	 * default values in f2fs.
+	 */
+	if (compressed && (ftype == F2FS_FT_DIR || ftype == F2FS_FT_REG_FILE)) {
+		if (i_compress_algrithm >= (uint8_t)COMPRESS_ALGO_MAX) {
+			ASSERT_MSG("[0x%x] wrong i_compress_algrithm=0x%x",
+						nid, i_compress_algrithm);
+			if (c.fix_on) {
+				node_blk->i.i_compress_algrithm = COMPRESS_ALGO_LZ4;
+				need_fix = 1;
+				FIX_MSG("ino[0x%x] set i_compress_algrithm %d", COMPRESS_ALGO_LZ4);
+			}
+		}
+
+		if (i_log_cluster_size != F2FS_MIN_COMPRESS_LOG_SIZE) {
+			ASSERT_MSG("[0x%x] wrong i_log_cluster_size=0x%x",
+						nid, i_log_cluster_size);
+			if (c.fix_on) {
+				node_blk->i.i_log_cluster_size = F2FS_MIN_COMPRESS_LOG_SIZE;
+				need_fix = 1;
+				FIX_MSG("ino[0x%x] set i_log_cluster_size %d", nid, F2FS_MIN_COMPRESS_LOG_SIZE);
+			}
+		}
+
+		if (need_fix == 1) {
+			dump_node(sbi, nid, 1);
+		}
+	}
+
 	memset(&child, 0, sizeof(child));
 	child.links = 2;
 	child.p_ino = nid;
@@ -751,6 +964,7 @@ check_next:
 			f2fs_set_main_bitmap(sbi, ni->blk_addr,
 							CURSEG_WARM_NODE);
 			if (i_links > 1 && ftype != F2FS_FT_ORPHAN &&
+					ftype != F2FS_FT_DEDUP_INNER &&
 					!is_qf_ino(F2FS_RAW_SUPER(sbi), nid)) {
 				/* First time. Create new hard link node */
 				add_into_hard_link_list(sbi, nid, i_links);
@@ -759,6 +973,7 @@ check_next:
 		} else {
 			DBG(3, "[0x%x] has hard links [0x%x]\n", nid, i_links);
 			if (find_and_dec_hard_link_list(sbi, nid)) {
+				DMD_ADD_ERROR(LOG_TYP_FSCK, PR_HARD_LINK_NUM_IS_ERROR);
 				ASSERT_MSG("[0x%x] needs more i_links=0x%x",
 						nid, i_links);
 				if (c.fix_on) {
@@ -774,6 +989,10 @@ check_next:
 			/* No need to go deep into the node */
 			return;
 		}
+	}
+	if (dedup_supported && f2fs_is_out_inode(node_blk)) {
+		inner_ino = f2fs_get_dedup_inner_ino(node_blk);
+		f2fs_inc_inner_actual_links(sbi, inner_ino);
 	}
 
 	/* readahead xattr node block */
@@ -791,6 +1010,10 @@ check_next:
 	if (ftype == F2FS_FT_CHRDEV || ftype == F2FS_FT_BLKDEV ||
 			ftype == F2FS_FT_FIFO || ftype == F2FS_FT_SOCK)
 		goto check;
+
+	if (is_special_orphan_file(&node_blk->i, ftype)) {
+		goto check;
+	}
 
 	/* init extent info */
 	get_extent_info(&child.ei, &node_blk->i.i_ext);
@@ -850,12 +1073,20 @@ check_next:
 	ofs = get_extra_isize(node_blk);
 
 	if ((node_blk->i.i_flags & cpu_to_le32(F2FS_CASEFOLD_FL)) &&
-	    (ftype != F2FS_FT_DIR ||
-	     !(c.feature & cpu_to_le32(F2FS_FEATURE_CASEFOLD)))) {
+	    ((ftype != F2FS_FT_DIR && ftype != F2FS_FT_ORPHAN) ||
+		 (ftype == F2FS_FT_ORPHAN && !S_ISDIR(le16_to_cpu(node_blk->i.i_mode))) ||
+		 !(c.feature & cpu_to_le32(F2FS_FEATURE_CASEFOLD)))) {
 		ASSERT_MSG("[0x%x] unexpected casefold flag", nid);
 		if (c.fix_on) {
 			FIX_MSG("ino[0x%x] clear casefold flag", nid);
 			node_blk->i.i_flags &= ~cpu_to_le32(F2FS_CASEFOLD_FL);
+			need_fix = 1;
+		}
+	}
+
+	if (fsck_chk_xattr_entries(sbi, node_blk)) {
+		if (c.fix_on) {
+			FIX_MSG("ino[0x%x] rewrite inline xattr", nid);
 			need_fix = 1;
 		}
 	}
@@ -867,6 +1098,7 @@ check_next:
 		block_t blkaddr = le32_to_cpu(node_blk->i.i_addr[ofs]);
 
 		if (blkaddr != 0) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INLINE_DATA_ADDR0_NOT_ZERO);
 			ASSERT_MSG("[0x%x] wrong inline reserve blkaddr:%u",
 					nid, blkaddr);
 			if (c.fix_on) {
@@ -893,6 +1125,7 @@ check_next:
 
 			if (memcmp(buf, inline_data_addr(node_blk),
 						MAX_INLINE_DATA(node_blk))) {
+				DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INLINE_DATA_INEXISTENCE);
 				ASSERT_MSG("[0x%x] junk inline data", nid);
 				if (c.fix_on) {
 					FIX_MSG("inline_data has DATA_EXIST");
@@ -906,29 +1139,72 @@ check_next:
 		goto check;
 	}
 
-	if ((node_blk->i.i_inline & F2FS_INLINE_DENTRY)) {
-		block_t blkaddr = le32_to_cpu(node_blk->i.i_addr[ofs]);
-
-		DBG(3, "ino[0x%x] has inline dentry!\n", nid);
-		if (blkaddr != 0) {
-			ASSERT_MSG("[0x%x] wrong inline reserve blkaddr:%u",
-								nid, blkaddr);
-			if (c.fix_on) {
-				FIX_MSG("inline_dentry has wrong 0'th block = %x",
-								blkaddr);
-				node_blk->i.i_addr[ofs] = 0;
-				node_blk->i.i_blocks = cpu_to_le64(*blk_cnt);
-				need_fix = 1;
-			}
+	/* check F2FS_INLINE_XATTR flag before check data */
+	if (missing_inline_xattr(&node_blk->i)) {
+		ASSERT_MSG("ino[0x%x] missing F2FS_INLINE_XATTR flag\n", nid);
+		node_blk->i.i_inline |= F2FS_INLINE_XATTR;
+		if (c.fix_on) {
+			FIX_MSG("ino[0x%x] set F2FS_INLINE_XATTR\n", nid);
+			need_fix = 1;
 		}
+	}
 
+	if ((node_blk->i.i_inline & F2FS_INLINE_DENTRY) &&
+		le32_to_cpu(node_blk->i.i_addr[ofs]) != 0) {
+		nid_t xnid = le32_to_cpu(node_blk->i.i_xattr_nid);
+
+		/*
+		* If i_blocks or i_size is matches of inline node, think of it has inline dentry
+		* but i_addr[ofs] != 0, so fix it.
+		* else think of it no inline dentry
+		* but i.i_inline & F2FS_INLINE_DENTRY is true, fix it.
+		*/
+		ASSERT_MSG("ino[0x%x] i_blocks = %u, blk_cnt = %u\n", nid, i_blocks, *blk_cnt);
+		if (i_blocks == (1 + (xnid ? 1 : 0)) || i_size <= MAX_INLINE_DATA(node_blk)) {
+			FIX_MSG("ino[0x%x] has inline_dentry with wrong 0'th block = %x\n",
+				nid, le32_to_cpu(node_blk->i.i_addr[ofs]));
+			node_blk->i.i_addr[ofs] = cpu_to_le32(0);
+		} else {
+			FIX_MSG("ino[0x%x] has no inline_dentry but has inline dentry flag\n", nid);
+			node_blk->i.i_inline &= ~(F2FS_INLINE_DENTRY);
+		}
+		need_fix = 1;
+		c.bug_on = 1;
+	}
+
+	if ((node_blk->i.i_inline & F2FS_INLINE_DENTRY)) {
+		DBG(3, "ino[0x%x] has inline dentry!\n", nid);
 		ret = fsck_chk_inline_dentries(sbi, node_blk, &child);
 		if (ret < 0) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_INLINE_DENTRY);
 			if (c.fix_on)
 				need_fix = 1;
 		}
 		child.state |= FSCK_INLINE_INODE;
 		goto check;
+	}
+
+	if (!S_ISDIR(le16_to_cpu(node_blk->i.i_mode)) && (node_blk->i.i_inline & F2FS_INLINE_DENTRY)) {
+		ASSERT_MSG("[0x%x] wrong i_inline=0x%x",
+						nid, node_blk->i.i_inline);
+		if (c.fix_on) {
+			node_blk->i.i_inline &= ~(F2FS_INLINE_DENTRY);
+			need_fix = 1;
+			FIX_MSG("ino[0x%x] remove F2FS_INLINE_DENTRY "
+					"flag in i_inline", nid);
+		}
+		dump_node(sbi, nid, 1);
+	}
+
+	/* readahead DIR data blocks */
+	if (ftype == F2FS_FT_DIR) {
+		for (idx = 0; idx < ADDRS_PER_INODE(&node_blk->i); idx++) {
+			block_t blkaddr = le32_to_cpu(node_blk->i.i_addr[ofs + idx]);
+			if (blkaddr == 0)
+				continue;
+			if (IS_VALID_BLK_ADDR(sbi, blkaddr))
+				queue_reada_block(sbi, blkaddr, DATA);
+		}
 	}
 
 	/* check data blocks in inode */
@@ -943,6 +1219,23 @@ check_next:
 	}
 	for (idx = 0; idx < addrs; idx++, child.pgofs++) {
 		block_t blkaddr = le32_to_cpu(node_blk->i.i_addr[ofs + idx]);
+
+		if (dedup_supported && f2fs_is_out_inode(node_blk)) {
+			if (f2fs_is_unstable_dedup_inode(node_blk) &&
+					blkaddr == DEDUP_ADDR) {
+				continue;
+			}
+			if (!f2fs_is_unstable_dedup_inode(node_blk)) {
+				if (blkaddr != DEDUP_ADDR && c.fix_on) {
+					node_blk->i.i_addr[ofs + idx] =
+						cpu_to_le32(DEDUP_ADDR);
+					need_fix = 1;
+					FIX_MSG("dedup nid [0x%x] i_addr[%d]:%x->DEDUP_ADDR",
+								nid, ofs + idx, blkaddr);
+				}
+				continue;
+			}
+		}
 
 		/* check extent info */
 		check_extent_info(&child, blkaddr, 0);
@@ -991,13 +1284,24 @@ check_next:
 
 	/* readahead node blocks */
 	for (idx = 0; idx < 5; idx++) {
-		u32 nid = le32_to_cpu(node_blk->i.i_nid[idx]);
-		fsck_reada_node_block(sbi, nid);
+		u32 _nid = le32_to_cpu(node_blk->i.i_nid[idx]);
+		fsck_reada_node_block(sbi, _nid);
 	}
 
 	/* check node blocks in inode */
 	for (idx = 0; idx < 5; idx++) {
 		nid_t i_nid = le32_to_cpu(node_blk->i.i_nid[idx]);
+
+		if (dedup_supported && f2fs_is_out_inode(node_blk) &&
+				!f2fs_is_unstable_dedup_inode(node_blk)) {
+			if (i_nid != 0 && c.fix_on) {
+				node_blk->i.i_nid[idx] = 0;
+				need_fix = 1;
+				FIX_MSG("dedup nid [0x%x] i_nid[%d]:%x->0",
+					nid, idx, i_nid);
+			}
+			continue;
+		}
 
 		if (idx == 0 || idx == 1)
 			ntype = TYPE_DIRECT_NODE;
@@ -1035,10 +1339,16 @@ skip:
 	}
 
 check:
-	/* check uncovered range in the back of extent */
-	check_extent_info(&child, 0, 1);
+	if (dedup_supported && f2fs_is_out_inode(node_blk) &&
+			!f2fs_is_revoke_inode(node_blk)) {
+		f2fs_check_dedup_extent_info(&child);
+	} else {
+		/* check uncovered range in the back of extent */
+		check_extent_info(&child, 0, 1);
+	}
 
 	if (child.state & FSCK_UNMATCHED_EXTENT) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_EXTENT_VALUE);
 		ASSERT_MSG("ino: 0x%x has wrong ext: [pgofs:%u, blk:%u, len:%u]",
 				nid, child.ei.fofs, child.ei.blk, child.ei.len);
 		if (c.fix_on)
@@ -1046,6 +1356,7 @@ check:
 	}
 
 	if (i_blocks != *blk_cnt) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_I_BLOCKS);
 		ASSERT_MSG("ino: 0x%x has i_blocks: %08"PRIx64", "
 				"but has %u blocks",
 				nid, i_blocks, *blk_cnt);
@@ -1064,6 +1375,11 @@ check:
 			FIX_MSG("[0x%x] i_compr_blocks=0x%08"PRIx64" -> 0x%x",
 					nid, i_compr_blocks, cbc->cnt);
 		}
+	}
+
+	if (compr_rel && i_compr_blocks) {
+		ASSERT_MSG("ino: 0x%x released, but has i_compr_blocks: %u",
+				nid, i_compr_blocks);
 	}
 
 skip_blkcnt_fix:
@@ -1105,6 +1421,7 @@ skip_blkcnt_fix:
 				child.files);
 
 		if (i_links != child.links) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_I_LINKS);
 			ASSERT_MSG("ino: 0x%x i_links: %u, real links: %u",
 					nid, i_links, child.links);
 			if (c.fix_on) {
@@ -1116,6 +1433,7 @@ skip_blkcnt_fix:
 		}
 		if (child.dots < 2 &&
 				!(node_blk->i.i_inline & F2FS_INLINE_DOTS)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_LOST_DOT_OR_DOTDOT);
 			ASSERT_MSG("ino: 0x%x dots: %u",
 					nid, child.dots);
 			if (c.fix_on) {
@@ -1129,11 +1447,11 @@ skip_blkcnt_fix:
 	i_gc_failures = le16_to_cpu(node_blk->i.i_gc_failures);
 
 	/*
-	 * old kernel initialized i_gc_failures as 0x01, in preen mode 2,
+	 * old kernel initialized i_gc_failures as 0x01
 	 * let's skip repairing.
 	 */
-	if (ftype == F2FS_FT_REG_FILE && i_gc_failures &&
-		(c.preen_mode != PREEN_MODE_2 || i_gc_failures != 0x01)) {
+	if ((ftype == F2FS_FT_REG_FILE || ftype == F2FS_FT_DEDUP_INNER) &&
+			i_gc_failures > 0x01) {
 
 		DBG(1, "Regular Inode: 0x%x [%s] depth: %d\n\n",
 				le32_to_cpu(node_blk->footer.ino), en,
@@ -1158,6 +1476,7 @@ skip_blkcnt_fix:
 	}
 
 	if (ftype == F2FS_FT_ORPHAN && i_links) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_ORPHAN_INODE_HAS_I_LINKS);
 		ASSERT_MSG("ino: 0x%x is orphan inode, but has i_links: %u",
 				nid, i_links);
 		if (c.fix_on) {
@@ -1211,6 +1530,21 @@ int fsck_chk_dnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 	bool compressed = i_flags & F2FS_COMPR_FL;
 	bool compr_rel = inode->i_inline & F2FS_COMPRESS_RELEASED;
 	u32 cluster_size = 1 << inode->i_log_cluster_size;
+
+	if (is_special_orphan_file(inode, ftype)) {
+		return 0;
+	}
+
+	/* readahead DIR data blocks */
+	if (ftype == F2FS_FT_DIR) {
+		for (idx = 0; idx < ADDRS_PER_INODE(&node_blk->i); idx++) {
+			block_t blkaddr = le32_to_cpu(node_blk->dn.addr[idx]);
+			if (blkaddr == 0)
+				continue;
+			if (IS_VALID_BLK_ADDR(sbi, blkaddr))
+				queue_reada_block(sbi, blkaddr, DATA);
+		}
+	}
 
 	for (idx = 0; idx < ADDRS_PER_BLOCK(inode); idx++, child->pgofs++) {
 		block_t blkaddr = le32_to_cpu(node_blk->dn.addr[idx]);
@@ -1283,14 +1617,14 @@ int fsck_chk_idnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 			*blk_cnt = *blk_cnt + 1;
 		else if (ret == -EINVAL) {
 			if (!c.fix_on)
-				printf("should delete in.nid[i] = 0;\n");
+				MSG(0, "should delete in.nid[i] = 0;\n");
 			else {
 				node_blk->in.nid[i] = 0;
 				need_fix = 1;
 				FIX_MSG("Set indirect node 0x%x -> 0", i);
 			}
 skip:
-			child->pgofs += ADDRS_PER_BLOCK(&node_blk->i);
+			child->pgofs += ADDRS_PER_BLOCK(inode);
 		}
 	}
 
@@ -1325,15 +1659,14 @@ int fsck_chk_didnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 			*blk_cnt = *blk_cnt + 1;
 		else if (ret == -EINVAL) {
 			if (!c.fix_on)
-				printf("should delete in.nid[i] = 0;\n");
+				MSG(0, "should delete in.nid[i] = 0;\n");
 			else {
 				node_blk->in.nid[i] = 0;
 				need_fix = 1;
 				FIX_MSG("Set double indirect node 0x%x -> 0", i);
 			}
 skip:
-			child->pgofs += ADDRS_PER_BLOCK(&node_blk->i) *
-							NIDS_PER_BLOCK;
+			child->pgofs += ADDRS_PER_BLOCK(inode) * NIDS_PER_BLOCK;
 		}
 	}
 
@@ -1445,9 +1778,9 @@ static void print_dentry(struct f2fs_sb_info *sbi, __u8 *name,
 			printf("\33[2K\r");
 	} else {
 		for (i = 1; i < depth; i++)
-			printf("%c   ", tree_mark[i]);
+			MSG(0, "%c   ", tree_mark[i]);
 
-		printf("%c-- %s <ino = 0x%x>, <encrypted (%d)>\n",
+		MSG(0, "%c-- %s <ino = 0x%x>, <encrypted (%d)>\n",
 			last_de ? '`' : '|',
 			new, le32_to_cpu(dentry[idx].ino),
 			enc_name);
@@ -1597,6 +1930,10 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, int casefolded,
 
 		if (test_bit_le(i, bitmap) == 0)
 			continue;
+		/* skip . and .. */
+		if (le32_to_cpu(dentry[i].ino) == child->p_ino ||
+			le32_to_cpu(dentry[i].ino) == child->pp_ino)
+			continue;
 
 		ino = le32_to_cpu(dentry[i].ino);
 
@@ -1605,7 +1942,7 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, int casefolded,
 
 			get_node_info(sbi, ino, &ni);
 			if (IS_VALID_BLK_ADDR(sbi, ni.blk_addr)) {
-				dev_reada_block(ni.blk_addr);
+				queue_reada_block(sbi, ni.blk_addr, NODE);
 				name_len = le16_to_cpu(dentry[i].name_len);
 				if (name_len > 0)
 					i += (name_len + F2FS_SLOT_LEN - 1) / F2FS_SLOT_LEN - 1;
@@ -1619,6 +1956,7 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, int casefolded,
 			continue;
 		}
 		if (!IS_VALID_NID(sbi, le32_to_cpu(dentry[i].ino))) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_NID);
 			ASSERT_MSG("Bad dentry 0x%x with invalid NID/ino 0x%x",
 				    i, le32_to_cpu(dentry[i].ino));
 			if (c.fix_on) {
@@ -1633,6 +1971,7 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, int casefolded,
 
 		ftype = dentry[i].file_type;
 		if ((ftype <= F2FS_FT_UNKNOWN || ftype > F2FS_FT_LAST_FILE_TYPE)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_FTYPE);
 			ASSERT_MSG("Bad dentry 0x%x with unexpected ftype 0x%x",
 						le32_to_cpu(dentry[i].ino), ftype);
 			if (c.fix_on) {
@@ -1648,6 +1987,7 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, int casefolded,
 		name_len = le16_to_cpu(dentry[i].name_len);
 
 		if (name_len == 0 || name_len > F2FS_NAME_LEN) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAME_LEN_IS_ZERO);
 			ASSERT_MSG("Bad dentry 0x%x with invalid name_len", i);
 			if (c.fix_on) {
 				FIX_MSG("Clear bad dentry 0x%x", i);
@@ -1694,8 +2034,10 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, int casefolded,
 			}
 		}
 
-		if (f2fs_check_hash_code(get_encoding(sbi), casefolded, dentry + i, name, name_len, enc_name))
+		if (f2fs_check_hash_code(get_encoding(sbi), casefolded, dentry + i, name, name_len, enc_name)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_HASH_CODE);
 			fixed = 1;
+		}
 
 		pretty_print_filename(name, name_len, en, enc_name);
 
@@ -1860,23 +2202,29 @@ int fsck_chk_data_blk(struct f2fs_sb_info *sbi, int casefolded,
 	}
 
 	if (!IS_VALID_BLK_ADDR(sbi, blk_addr)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_NID);
 		ASSERT_MSG("blkaddress is not valid. [0x%x]", blk_addr);
 		return -EINVAL;
 	}
 
 	if (is_valid_ssa_data_blk(sbi, blk_addr, parent_nid,
 						idx_in_node, ver)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_SUM_DATA_BLOCK);
 		ASSERT_MSG("summary data block is not valid. [0x%x]",
 						parent_nid);
 		return -EINVAL;
 	}
 
-	if (f2fs_test_sit_bitmap(sbi, blk_addr) == 0)
+	if (f2fs_test_sit_bitmap(sbi, blk_addr) == 0) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_DATA_BLKADDR_OUT_SIT_BITMAP);
 		ASSERT_MSG("SIT bitmap is 0x0. blk_addr[0x%x]", blk_addr);
+	}
 
-	if (f2fs_test_main_bitmap(sbi, blk_addr) != 0)
+	if (f2fs_test_main_bitmap(sbi, blk_addr) != 0) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_DUPLICATE_DATA_BLKADDR_IN_MAIN_BITMAP);
 		ASSERT_MSG("Duplicated data [0x%x]. pnid[0x%x] idx[0x%x]",
 				blk_addr, parent_nid, idx_in_node);
+	}
 
 	fsck->chk.valid_blk_cnt++;
 
@@ -1948,8 +2296,10 @@ int fsck_chk_orphan_node(struct f2fs_sb_info *sbi)
 							orphan_blk->ino[j];
 			else if (ret && c.fix_on)
 				FIX_MSG("[0x%x] remove from orphan list", ino);
-			else if (ret)
+			else if (ret) {
+				DMD_ADD_ERROR(LOG_TYP_FSCK, PR_ORPAHN_INODE_ERROR);
 				ASSERT_MSG("[0x%x] wrong orphan inode", ino);
+			}
 		}
 		if (f2fs_dev_is_writable() && c.fix_on &&
 				entry_count != new_entry_count) {
@@ -2036,9 +2386,11 @@ int fsck_chk_quota_files(struct f2fs_sb_info *sbi)
 		}
 
 		/* Something is wrong */
-		if (c.fix_on) {
+		if (c.fix_on && !c.dry_run) {
 			DBG(0, "Fixing Quota file ([%3d] ino [0x%x])\n",
 							qtype, ino);
+			fsck_disconnect_file(sbi, ino, true);
+			f2fs_rebuild_qf_inode(sbi, qtype);
 			f2fs_filesize_update(sbi, ino, 0);
 			ret = quota_write_inode(sbi, qtype);
 			if (!ret) {
@@ -2049,7 +2401,8 @@ int fsck_chk_quota_files(struct f2fs_sb_info *sbi)
 			}
 		} else {
 			ASSERT_MSG("Quota file is missing or invalid"
-					" quota file content found.");
+					" quota file content found, or"
+					" fsck is in dry-run mode.");
 		}
 	}
 	return ret;
@@ -2078,6 +2431,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 	}
 	if (fsck->chk.sit_free_segs + sit_valid_segs !=
 				get_usable_seg_count(sbi)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_SIT_SEGMENT_COUNT_MISMATCH_WITH_TOTAL);
 		ASSERT_MSG("SIT usage does not match: sit_free_segs %u, "
 				"sit_valid_segs %u, total_segs %u",
 			fsck->chk.sit_free_segs, sit_valid_segs,
@@ -2087,6 +2441,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 
 	/* 2. check node count */
 	if (fsck->chk.valid_nat_entry_cnt != sit_node_blks) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAT_NODE_COUNT_MISMATCH_WITH_SIT);
 		ASSERT_MSG("node count does not match: valid_nat_entry_cnt %u,"
 			" sit_node_blks %u",
 			fsck->chk.valid_nat_entry_cnt, sit_node_blks);
@@ -2095,6 +2450,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 
 	/* 3. check SIT with CP */
 	if (fsck->chk.sit_free_segs != le32_to_cpu(cp->free_segment_count)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_SIT_FREESEG_COUNT_MISMATCH_WITH_CP);
 		ASSERT_MSG("free segs does not match: sit_free_segs %u, "
 				"free_segment_count %u",
 				fsck->chk.sit_free_segs,
@@ -2105,6 +2461,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 	/* 4. check NAT with CP */
 	if (fsck->chk.valid_nat_entry_cnt !=
 					le32_to_cpu(cp->valid_node_count)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAT_NODE_COUNT_MISMATCH_WITH_CP);
 		ASSERT_MSG("valid node does not match: valid_nat_entry_cnt %u,"
 				" valid_node_count %u",
 				fsck->chk.valid_nat_entry_cnt,
@@ -2112,7 +2469,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 		return -EINVAL;
 	}
 
-	/* 4. check orphan inode simply */
+	/* 5. check orphan inode simply */
 	if (fsck_chk_orphan_node(sbi))
 		return -EINVAL;
 
@@ -2129,6 +2486,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 			continue;
 
 		if (!IS_VALID_BLK_ADDR(sbi, blk)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NODE_INVALID_BLKADDR);
 			MSG(0, "\tError: nat entry[ino %u block_addr 0x%x]"
 				" is in valid\n",
 				ino, blk);
@@ -2136,6 +2494,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 		}
 
 		if (!f2fs_test_sit_bitmap(sbi, blk)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAT_BLKADDR_OUT_SIT_BITMAP);
 			MSG(0, "\tError: nat entry[ino %u block_addr 0x%x]"
 				" not find it in sit_area_bitmap\n",
 				ino, blk);
@@ -2143,6 +2502,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 		}
 
 		if (!IS_VALID_NID(sbi, ino)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_NID);
 			MSG(0, "\tError: nat_entry->ino %u exceeds the range"
 				" of nat entries %u\n",
 				ino, fsck->nr_nat_entries);
@@ -2150,6 +2510,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 		}
 
 		if (!f2fs_test_bit(ino, fsck->nat_area_bitmap)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAT_INO_OUT_NAT_BITMAP);
 			MSG(0, "\tError: nat_entry->ino %u is not set in"
 				" nat_area_bitmap\n", ino);
 			return -EINVAL;
@@ -2161,6 +2522,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 		return -EINVAL;
 
 	if (fsck->nat_valid_inode_cnt != le32_to_cpu(cp->valid_inode_count)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NAT_INODE_COUNT_MISMATCH_WITH_CP);
 		ASSERT_MSG("valid inode does not match: nat_valid_inode_cnt %u,"
 				" valid_inode_count %u",
 				fsck->nat_valid_inode_cnt,
@@ -2184,7 +2546,7 @@ void fsck_chk_checkpoint(struct f2fs_sb_info *sbi)
 	}
 }
 
-void fsck_init(struct f2fs_sb_info *sbi)
+void fsck_init(struct f2fs_sb_info *sbi, bool caller_is_fsck)
 {
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 	struct f2fs_sm_info *sm_i = SM_I(sbi);
@@ -2216,6 +2578,11 @@ void fsck_init(struct f2fs_sb_info *sbi)
 	fsck->dentry_end = fsck->dentry;
 
 	c.quota_fixed = false;
+
+	if (caller_is_fsck) {
+		build_sum_cache_list(sbi);
+		init_reada_queue(sbi);
+	}
 }
 
 static void fix_hard_links(struct f2fs_sb_info *sbi)
@@ -2319,6 +2686,7 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 	u32 i;
 	int ret;
 	uint32_t crc = 0;
+	struct f2fs_journal *nat_journal = CURSEG_I(sbi, CURSEG_HOT_DATA)->journal;
 
 	/* should call from fsck */
 	ASSERT(c.func == FSCK);
@@ -2327,6 +2695,14 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 		orphan_blks = __start_sum_addr(sbi) - 1;
 		flags |= CP_ORPHAN_PRESENT_FLAG;
 	}
+
+	/* if has append nat block,we need set append flag
+	* and sit count is nullified,no need to set sit flag
+	*/
+	if (nats_in_cursum(nat_journal) > NAT_JOURNAL_ENTRIES) {
+		flags |= CP_APPEND_NAT_FLAG;
+	}
+
 	if (is_set_ckpt_flags(cp, CP_TRIMMED_FLAG))
 		flags |= CP_TRIMMED_FLAG;
 	if (is_set_ckpt_flags(cp, CP_DISABLED_FLAG))
@@ -2346,9 +2722,10 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 	set_cp(cp_pack_total_block_count, cp_blocks +
 				orphan_blks + get_sb(cp_payload));
 
-	flags = update_nat_bits_flags(sb, cp, flags);
 	flags |= CP_NOCRC_RECOVERY_FLAG;
 	set_cp(ckpt_flags, flags);
+	set_cp(cp_pack_total_block_count, cp_blocks +
+				orphan_blks + get_sb(cp_payload));
 
 	set_cp(free_segment_count, get_free_segments(sbi));
 	set_cp(valid_block_count, fsck->chk.valid_blk_cnt);
@@ -2380,13 +2757,24 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 		if (!(flags & CP_UMOUNT_FLAG) && IS_NODESEG(i))
 			continue;
 
+		if ((i == CURSEG_HOT_DATA) || (i == CURSEG_COLD_DATA)) {
+			memcpy(&curseg->sum_blk->journal, curseg->journal,
+				sizeof(struct f2fs_journal));
+		}
+
 		ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
 		ASSERT(ret >= 0);
 	}
 
-	/* Write nat bits */
-	if (flags & CP_NAT_BITS_FLAG)
-		write_nat_bits(sbi, sb, cp, sbi->cur_cp);
+	/* write nat append block */
+	if (flags & CP_APPEND_NAT_FLAG) {
+		struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_HOT_DATA);
+		block_t start_blk = __start_cp_addr(sbi) +
+			le32_to_cpu(F2FS_CKPT(sbi)->cp_pack_total_block_count);
+		ret = dev_write_block((char *)curseg->journal + SUM_JOURNAL_SIZE - NAT_JOURNAL_RESERVED,
+					start_blk);
+		ASSERT(ret >= 0);
+	}
 
 	ret = f2fs_fsync_device();
 	ASSERT(ret >= 0);
@@ -2555,6 +2943,7 @@ int check_curseg_offset(struct f2fs_sb_info *sbi, int type)
 	se = get_seg_entry(sbi, curseg->segno);
 	if (f2fs_test_bit(curseg->next_blkoff,
 				(const char *)se->cur_valid_map)) {
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_CUR_NEXT_BLK_IS_NOT_FREE);
 		ASSERT_MSG("Next block offset is not free, type:%d", type);
 		return -EINVAL;
 	}
@@ -2564,6 +2953,7 @@ int check_curseg_offset(struct f2fs_sb_info *sbi, int type)
 	nblocks = sbi->blocks_per_seg;
 	for (j = curseg->next_blkoff + 1; j < nblocks; j++) {
 		if (f2fs_test_bit(j, (const char *)se->cur_valid_map)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_LFS_HAS_NO_FREE_SECTION);
 			ASSERT_MSG("For LFS curseg, space after .next_blkoff "
 				"should be unused, type:%d", type);
 			return -EINVAL;
@@ -2619,6 +3009,7 @@ int check_sit_types(struct f2fs_sb_info *sbi)
 					se->type <= CURSEG_COLD_DATA) {
 				se->type = se->orig_type;
 			} else {
+				DMD_ADD_ERROR(LOG_TYP_FSCK, PR_SIT_TYPE_IS_ERROR);
 				FIX_MSG("Wrong segment type [0x%x] %x -> %x",
 						i, se->orig_type, se->type);
 				err = -EINVAL;
@@ -2730,10 +3121,52 @@ static int fsck_do_reconnect_file(struct f2fs_sb_info *sbi,
 	return 0;
 }
 
-static void fsck_failed_reconnect_file_dnode(struct f2fs_sb_info *sbi,
-					     nid_t nid)
+static inline void release_inode_cnt(struct f2fs_sb_info *sbi, bool dealloc)
 {
-	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
+	F2FS_FSCK(sbi)->chk.valid_inode_cnt--;
+	if (dealloc) {
+		sbi->total_valid_inode_count--;
+	}
+}
+
+static inline void release_node_cnt(struct f2fs_sb_info *sbi, bool dealloc)
+{
+	F2FS_FSCK(sbi)->chk.valid_node_cnt--;
+	if (dealloc) {
+		sbi->total_valid_node_count--;
+	}
+}
+
+static inline void release_block_cnt(struct f2fs_sb_info *sbi, bool dealloc)
+{
+	F2FS_FSCK(sbi)->chk.valid_blk_cnt--;
+	if (dealloc) {
+		sbi->total_valid_block_count--;
+	}
+}
+
+static inline void release_block(struct f2fs_sb_info *sbi, u64 blkaddr, bool dealloc)
+{
+	f2fs_clear_main_bitmap(sbi, blkaddr);
+	if (dealloc) {
+		struct seg_entry *se;
+
+		se = get_seg_entry(sbi, GET_SEGNO(sbi, blkaddr));
+		se->valid_blocks--;
+		f2fs_clear_bit(OFFSET_IN_SEG(sbi, blkaddr), (char *)se->cur_valid_map);
+		se->dirty = 1;
+		f2fs_clear_sit_bitmap(sbi, blkaddr);
+	}
+}
+
+static inline void release_nat_entry(struct f2fs_sb_info *sbi, u32 nid)
+{
+	nullify_nat_entry(sbi, nid);
+	F2FS_FSCK(sbi)->chk.valid_nat_entry_cnt--;
+}
+
+static void fsck_disconnect_file_dnode(struct f2fs_sb_info *sbi, struct f2fs_inode *inode, nid_t nid, bool dealloc)
+{
 	struct f2fs_node *node;
 	struct node_info ni;
 	u32 addr;
@@ -2746,25 +3179,60 @@ static void fsck_failed_reconnect_file_dnode(struct f2fs_sb_info *sbi,
 	err = dev_read_block(node, ni.blk_addr);
 	ASSERT(err >= 0);
 
-	fsck->chk.valid_node_cnt--;
-	fsck->chk.valid_blk_cnt--;
-	f2fs_clear_main_bitmap(sbi, ni.blk_addr);
+	release_node_cnt(sbi, dealloc);
+	release_block_cnt(sbi, dealloc);
+	release_block(sbi, ni.blk_addr, dealloc);
 
-	for (i = 0; i < ADDRS_PER_BLOCK(&node->i); i++) {
+	for (i = 0; i < ADDRS_PER_BLOCK(inode); i++) {
 		addr = le32_to_cpu(node->dn.addr[i]);
 		if (!addr)
 			continue;
-		fsck->chk.valid_blk_cnt--;
-		if (addr == NEW_ADDR)
+		release_block_cnt(sbi, dealloc);
+		if (addr == NEW_ADDR || addr == COMPRESS_ADDR || addr == DEDUP_ADDR)
 			continue;
-		f2fs_clear_main_bitmap(sbi, addr);
+		release_block(sbi, addr, dealloc);
+	}
+
+	if (dealloc) {
+		release_nat_entry(sbi, nid);
 	}
 
 	free(node);
 }
 
-static void fsck_failed_reconnect_file_idnode(struct f2fs_sb_info *sbi,
-					      nid_t nid)
+static void fsck_disconnect_file_idnode(struct f2fs_sb_info *sbi, struct f2fs_inode *inode, nid_t nid, bool dealloc)
+{
+	struct f2fs_node *node;
+	struct node_info ni;
+	nid_t tmp;
+	int i, err;
+
+	node = calloc(F2FS_BLKSIZE, 1);
+	ASSERT(node);
+
+	get_node_info(sbi, nid, &ni);
+	err = dev_read_block(node, ni.blk_addr);
+	ASSERT(err >= 0);
+
+	release_node_cnt(sbi, dealloc);
+	release_block_cnt(sbi, dealloc);
+	release_block(sbi, ni.blk_addr, dealloc);
+
+	for (i = 0; i < NIDS_PER_BLOCK; i++) {
+		tmp = le32_to_cpu(node->in.nid[i]);
+		if (!tmp)
+			continue;
+		fsck_disconnect_file_dnode(sbi, inode, tmp, dealloc);
+	}
+
+	if (dealloc) {
+		release_nat_entry(sbi, nid);
+	}
+
+	free(node);
+}
+
+static void fsck_disconnect_file_didnode(struct f2fs_sb_info *sbi, struct f2fs_inode *inode, nid_t nid, bool dealloc)
 {
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 	struct f2fs_node *node;
@@ -2779,58 +3247,26 @@ static void fsck_failed_reconnect_file_idnode(struct f2fs_sb_info *sbi,
 	err = dev_read_block(node, ni.blk_addr);
 	ASSERT(err >= 0);
 
-	fsck->chk.valid_node_cnt--;
-	fsck->chk.valid_blk_cnt--;
-	f2fs_clear_main_bitmap(sbi, ni.blk_addr);
+	release_node_cnt(sbi, dealloc);
+	release_block_cnt(sbi, dealloc);
+	release_block(sbi, ni.blk_addr, dealloc);
 
 	for (i = 0; i < NIDS_PER_BLOCK; i++) {
 		tmp = le32_to_cpu(node->in.nid[i]);
 		if (!tmp)
 			continue;
-		fsck_failed_reconnect_file_dnode(sbi, tmp);
+		fsck_disconnect_file_idnode(sbi, inode, tmp, dealloc);
+	}
+
+	if (dealloc) {
+		release_nat_entry(sbi, nid);
 	}
 
 	free(node);
 }
 
-static void fsck_failed_reconnect_file_didnode(struct f2fs_sb_info *sbi,
-					       nid_t nid)
+void fsck_disconnect_file(struct f2fs_sb_info *sbi, nid_t ino, bool dealloc)
 {
-	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
-	struct f2fs_node *node;
-	struct node_info ni;
-	nid_t tmp;
-	int i, err;
-
-	node = calloc(F2FS_BLKSIZE, 1);
-	ASSERT(node);
-
-	get_node_info(sbi, nid, &ni);
-	err = dev_read_block(node, ni.blk_addr);
-	ASSERT(err >= 0);
-
-	fsck->chk.valid_node_cnt--;
-	fsck->chk.valid_blk_cnt--;
-	f2fs_clear_main_bitmap(sbi, ni.blk_addr);
-
-	for (i = 0; i < NIDS_PER_BLOCK; i++) {
-		tmp = le32_to_cpu(node->in.nid[i]);
-		if (!tmp)
-			continue;
-		fsck_failed_reconnect_file_idnode(sbi, tmp);
-	}
-
-	free(node);
-}
-
-/*
- * Counters and main_area_bitmap are already changed during checking
- * inode block, so clear them. There is no need to clear new blocks
- * allocted to lost+found.
- */
-static void fsck_failed_reconnect_file(struct f2fs_sb_info *sbi, nid_t ino)
-{
-	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 	struct f2fs_node *node;
 	struct node_info ni;
 	nid_t nid;
@@ -2844,31 +3280,31 @@ static void fsck_failed_reconnect_file(struct f2fs_sb_info *sbi, nid_t ino)
 	ASSERT(err >= 0);
 
 	/* clear inode counters */
-	fsck->chk.valid_inode_cnt--;
-	fsck->chk.valid_node_cnt--;
-	fsck->chk.valid_blk_cnt--;
-	f2fs_clear_main_bitmap(sbi, ni.blk_addr);
+	release_inode_cnt(sbi, dealloc);
+	release_node_cnt(sbi, dealloc);
+	release_block_cnt(sbi, dealloc);
+	release_block(sbi, ni.blk_addr, dealloc);
 
 	/* clear xnid counters */
 	if (node->i.i_xattr_nid) {
 		nid = le32_to_cpu(node->i.i_xattr_nid);
-		fsck->chk.valid_node_cnt--;
-		fsck->chk.valid_blk_cnt--;
+		release_node_cnt(sbi, dealloc);
+		release_block_cnt(sbi, dealloc);
 		get_node_info(sbi, nid, &ni);
-		f2fs_clear_main_bitmap(sbi, ni.blk_addr);
+		release_block(sbi, ni.blk_addr, dealloc);
 	}
 
 	/* clear data counters */
-	if(!(node->i.i_inline & F2FS_INLINE_DATA)) {
+	if (!(node->i.i_inline & F2FS_INLINE_DATA)) {
 		ofs = get_extra_isize(node);
 		for (i = 0; i < ADDRS_PER_INODE(&node->i); i++) {
 			block_t addr = le32_to_cpu(node->i.i_addr[ofs + i]);
 			if (!addr)
 				continue;
-			fsck->chk.valid_blk_cnt--;
-			if (addr == NEW_ADDR)
+			release_block_cnt(sbi, dealloc);
+			if (addr == NEW_ADDR || addr == COMPRESS_ADDR || addr == DEDUP_ADDR)
 				continue;
-			f2fs_clear_main_bitmap(sbi, addr);
+			release_block(sbi, addr, dealloc);
 		}
 	}
 
@@ -2880,16 +3316,23 @@ static void fsck_failed_reconnect_file(struct f2fs_sb_info *sbi, nid_t ino)
 		switch (i) {
 		case 0: /* direct node */
 		case 1:
-			fsck_failed_reconnect_file_dnode(sbi, nid);
+			fsck_disconnect_file_dnode(sbi, &node->i, nid,
+					dealloc);
 			break;
 		case 2: /* indirect node */
 		case 3:
-			fsck_failed_reconnect_file_idnode(sbi, nid);
+			fsck_disconnect_file_idnode(sbi, &node->i, nid,
+					dealloc);
 			break;
 		case 4: /* double indirect node */
-			fsck_failed_reconnect_file_didnode(sbi, nid);
+			fsck_disconnect_file_didnode(sbi, &node->i, nid,
+					dealloc);
 			break;
 		}
+	}
+
+	if (dealloc) {
+		release_nat_entry(sbi, ino);
 	}
 
 	free(node);
@@ -2977,7 +3420,7 @@ static int fsck_reconnect_file(struct f2fs_sb_info *sbi)
 			if (fsck_do_reconnect_file(sbi, lpf_node, node)) {
 				DBG(1, "Failed to reconnect inode [0x%x]\n",
 				    nid);
-				fsck_failed_reconnect_file(sbi, nid);
+				fsck_disconnect_file(sbi, nid, false);
 				continue;
 			}
 
@@ -3188,7 +3631,7 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 	if (c.show_file_map)
 		return 0;
 
-	printf("\n");
+	MSG(0, "\n");
 
 	if (c.zoned_model == F2FS_ZONED_HM) {
 		printf("[FSCK] Write pointers consistency                    ");
@@ -3219,16 +3662,24 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 			struct node_info ni;
 
 			get_node_info(sbi, i, &ni);
-			printf("NID[0x%x] is unreachable, blkaddr:0x%x\n",
-							i, ni.blk_addr);
+			if (nr_unref_nid == 0) {
+				DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NID_IS_UNREACHABLE);
+				MSG(0, "Unreachable NIDs:\n");
+				MSG(0, "[");
+			}
+			MSG(0, "0x%x,0x%x ", i, ni.blk_addr);
 			nr_unref_nid++;
 		}
+	}
+	if (nr_unref_nid) {
+		MSG(0, "]\n");
 	}
 
 	if (fsck->hard_link_list_head != NULL) {
 		node = fsck->hard_link_list_head;
 		while (node) {
-			printf("NID[0x%x] has [0x%x] more unreachable links\n",
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NID_HAS_MORE_UNREACHABLE_LINKS);
+			MSG(0, "NID[0x%x] has [0x%x] more unreachable links\n",
 					node->nid, node->links);
 			node = node->next;
 		}
@@ -3242,91 +3693,111 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 							BLKS_PER_SEC(sbi);
 	max_blks = SM_I(sbi)->main_blkaddr + (data_secs + node_secs) *
 							BLKS_PER_SEC(sbi);
-	printf("[FSCK] Max image size: %"PRIu64" MB, Free space: %"PRIu64" MB\n",
+	MSG(0, "[FSCK] Max image size: %"PRIu64" MB, Free space: %"PRIu64" MB\n",
 						max_blks >> 8, free_blks >> 8);
-	printf("[FSCK] Unreachable nat entries                       ");
+	DMD_SET_VALUE(usedSpace, max_blks >> MB_BLK_SHIFT);
+	DMD_SET_VALUE(freeSpace, free_blks >> MB_BLK_SHIFT);
+	MSG(0, "[FSCK] Unreachable nat entries                       ");
 	if (nr_unref_nid == 0x0) {
-		printf(" [Ok..] [0x%x]\n", nr_unref_nid);
+		MSG(0, " [Ok..] [0x%x]\n", nr_unref_nid);
 	} else {
-		printf(" [Fail] [0x%x]\n", nr_unref_nid);
+		MSG(0, " [Fail] [0x%x]\n", nr_unref_nid);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_NID_IS_UNREACHABLE, "nr_unref_nid=%u", nr_unref_nid);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] SIT valid block bitmap checking                ");
+	MSG(0, "[FSCK] SIT valid block bitmap checking                ");
 	if (memcmp(fsck->sit_area_bitmap, fsck->main_area_bitmap,
 					fsck->sit_area_bitmap_sz) == 0x0) {
-		printf("[Ok..]\n");
+		MSG(0, "[Ok..]\n");
 	} else {
-		printf("[Fail]\n");
+		MSG(0, "[Fail]\n");
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_SIT_INVALID_BLOCK_BITMAP);
+		dump_bitmap_diff(sbi, fsck->sit_area_bitmap, fsck->main_area_bitmap);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] Hard link checking for regular file           ");
+	MSG(0, "[FSCK] Hard link checking for regular file           ");
 	if (fsck->hard_link_list_head == NULL) {
-		printf(" [Ok..] [0x%x]\n", fsck->chk.multi_hard_link_files);
+		MSG(0, " [Ok..] [0x%x]\n", fsck->chk.multi_hard_link_files);
 	} else {
-		printf(" [Fail] [0x%x]\n", fsck->chk.multi_hard_link_files);
+		MSG(0, " [Fail] [0x%x]\n", fsck->chk.multi_hard_link_files);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_MULTI_HARD_LINK_FILES,
+			"multi_hard_link_files=%u", fsck->chk.multi_hard_link_files);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] valid_block_count matching with CP            ");
+	MSG(0, "[FSCK] valid_block_count matching with CP            ");
 	if (sbi->total_valid_block_count == fsck->chk.valid_blk_cnt) {
-		printf(" [Ok..] [0x%x]\n", (u32)fsck->chk.valid_blk_cnt);
+		MSG(0, " [Ok..] [0x%x]\n", (u32)fsck->chk.valid_blk_cnt);
 	} else {
-		printf(" [Fail] [0x%x]\n", (u32)fsck->chk.valid_blk_cnt);
+		MSG(0, " [Fail] [0x%x]\n", (u32)fsck->chk.valid_blk_cnt);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_VALID_BLOCK_COUNT_MISMATCH_WITH_CP,
+			"nrSbiValidBlk=%u, nrCpValidBlk=%u;", sbi->total_valid_block_count, (u32)fsck->chk.valid_blk_cnt);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] valid_node_count matching with CP (de lookup) ");
+	MSG(0, "[FSCK] valid_node_count matching with CP (de lookup) ");
 	if (sbi->total_valid_node_count == fsck->chk.valid_node_cnt) {
-		printf(" [Ok..] [0x%x]\n", fsck->chk.valid_node_cnt);
+		MSG(0, " [Ok..] [0x%x]\n", fsck->chk.valid_node_cnt);
 	} else {
-		printf(" [Fail] [0x%x]\n", fsck->chk.valid_node_cnt);
+		MSG(0, " [Fail] [0x%x]\n", fsck->chk.valid_node_cnt);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_VALID_NODE_COUNT_MISMATCH_WITH_CP_NAT,
+			"nrSbiValidNode=%u, nrCpValidNodeDE=%u;", sbi->total_valid_node_count, fsck->chk.valid_node_cnt);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] valid_node_count matching with CP (nat lookup)");
+	MSG(0, "[FSCK] valid_node_count matching with CP (nat lookup)");
 	if (sbi->total_valid_node_count == fsck->chk.valid_nat_entry_cnt) {
-		printf(" [Ok..] [0x%x]\n", fsck->chk.valid_nat_entry_cnt);
+		MSG(0, " [Ok..] [0x%x]\n", fsck->chk.valid_nat_entry_cnt);
 	} else {
-		printf(" [Fail] [0x%x]\n", fsck->chk.valid_nat_entry_cnt);
+		MSG(0, " [Fail] [0x%x]\n", fsck->chk.valid_nat_entry_cnt);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_VALID_NODE_COUNT_MISMATCH_WITH_CP_NAT,
+			"nrSbiValidNode=%u, nrCpValidNatEntry=%u;", sbi->total_valid_node_count, fsck->chk.valid_nat_entry_cnt);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] valid_inode_count matched with CP             ");
+	MSG(0, "[FSCK] valid_inode_count matched with CP             ");
 	if (sbi->total_valid_inode_count == fsck->chk.valid_inode_cnt) {
-		printf(" [Ok..] [0x%x]\n", fsck->chk.valid_inode_cnt);
+		MSG(0, " [Ok..] [0x%x]\n", fsck->chk.valid_inode_cnt);
 	} else {
-		printf(" [Fail] [0x%x]\n", fsck->chk.valid_inode_cnt);
+		MSG(0, " [Fail] [0x%x]\n", fsck->chk.valid_inode_cnt);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_VALID_INODE_COUNT_MISMATCH_WITH_CP,
+			"nrSbiValidInode=%u, nrCpValidInode=%u;", sbi->total_valid_inode_count, fsck->chk.valid_inode_cnt);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] free segment_count matched with CP            ");
+	MSG(0, "[FSCK] free segment_count matched with CP            ");
 	if (le32_to_cpu(F2FS_CKPT(sbi)->free_segment_count) ==
 						fsck->chk.sit_free_segs) {
-		printf(" [Ok..] [0x%x]\n", fsck->chk.sit_free_segs);
+		MSG(0, " [Ok..] [0x%x]\n", fsck->chk.sit_free_segs);
 	} else {
-		printf(" [Fail] [0x%x]\n", fsck->chk.sit_free_segs);
+		MSG(0, " [Fail] [0x%x]\n", fsck->chk.sit_free_segs);
+		DMD_ADD_MSG_ERROR(LOG_TYP_FSCK, PR_SEGMENT_COUNT_MISMATCH_WITH_CP,
+			"nrSbiFreeSegs=%u, cpSitFreeSegs=%u",
+			le32_to_cpu(F2FS_CKPT(sbi)->free_segment_count), fsck->chk.sit_free_segs);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] next block offset is free                     ");
+	MSG(0, "[FSCK] next block offset is free                     ");
 	if (check_curseg_offsets(sbi) == 0) {
-		printf(" [Ok..]\n");
+		MSG(0, " [Ok..]\n");
 	} else {
-		printf(" [Fail]\n");
+		MSG(0, " [Fail]\n");
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NEXT_BLOCK_OFFSET_FREE);
 		verify_failed = true;
 	}
 
-	printf("[FSCK] fixing SIT types\n");
+	MSG(0, "[FSCK] fixing SIT types\n");
 	if (check_sit_types(sbi) != 0)
 		force = 1;
 
-	printf("[FSCK] other corrupted bugs                          ");
+	MSG(0, "[FSCK] other corrupted bugs                          ");
 	if (c.bug_on == 0) {
-		printf(" [Ok..]\n");
+		MSG(0, " [Ok..]\n");
 	} else {
-		printf(" [Fail]\n");
+		MSG(0, " [Fail]\n");
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_OTHER_CORRUPT);
 		ret = EXIT_ERR_CODE;
 	}
 
@@ -3382,14 +3853,20 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 			update_superblock(sb, SB_MASK_ALL);
 
 		/* to return FSCK_ERROR_CORRECTED */
+		ClearExtraFlag(sbi->raw_super, EXTRA_NEED_FSCK_FLAG);
 		ret = 0;
 	}
 	return ret;
 }
 
-void fsck_free(struct f2fs_sb_info *sbi)
+void fsck_free(struct f2fs_sb_info *sbi, bool caller_is_fsck)
 {
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
+
+	if (caller_is_fsck) {
+		exit_reada_queue(sbi);
+		destroy_sum_cache_list(sbi);
+	}
 
 	if (fsck->qctx)
 		quota_release_context(&fsck->qctx);
