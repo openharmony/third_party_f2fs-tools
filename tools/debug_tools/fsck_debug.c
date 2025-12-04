@@ -38,6 +38,7 @@ void dump_sbi_info(struct f2fs_sb_info *sbi)
 #define HEX_SHIFT_8      8
 #define HEX_SHIFT_4      4
 #define HEX_MASK         0x0F
+#define U32_PER_SEG      64
 void hex_info_dump(const char *prompts, const unsigned char *buf,
 			unsigned int len)
 {
@@ -66,4 +67,53 @@ void hex_info_dump(const char *prompts, const unsigned char *buf,
 		MSG(0, "%s\n", line);
 	}
 	MSG(0, "===HEX DUMP END===\n");
+}
+
+static void dump_one_segment(const char *bitmap, unsigned int segno)
+{
+	for (u32 i = 0; i < U32_PER_SEG; i++) {
+		MSG(0, " %02x", *(bitmap + i + segno * U32_PER_SEG));
+
+		if ((i + 1) % LINE_MAX_INTS == 0) {
+			MSG(0, "\n");
+		}
+	}
+}
+
+static bool has_diff_segment(const char *sit_area_bitmap, const char *main_area_bitmap, unsigned int segno)
+{
+	for (u32 i = 0; i < U32_PER_SEG; i++) {
+		if (*(main_area_bitmap + i + segno * U32_PER_SEG) != *(sit_area_bitmap + i + segno * U32_PER_SEG)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void dump_bitmap_diff(struct f2fs_sb_info *sbi, const char *sit_area_bitmap, const char *main_area_bitmap)
+{
+	struct seg_entry *se;
+	unsigned int segno;
+	int i;
+	u32 main_segments = SM_I(sbi)->main_segments;
+
+	if (sit_area_bitmap == NULL || main_area_bitmap == NULL) {
+		return;
+	}
+
+	for (segno = 0; segno < main_segments; segno++) {
+		se = get_seg_entry(sbi, segno);
+		if (se->valid_blocks == 0x0) {
+			continue;
+		}
+
+		if (has_diff_segment(sit_area_bitmap, main_area_bitmap, segno)) {
+			MSG(0, "segno: %u vblocks: %u seg_type: %d\n", segno, se->valid_blocks, se->type);
+			MSG(0, "=Dump main bitmap=\n");
+			dump_one_segment(main_area_bitmap, segno);
+			MSG(0, "=Dump sit bitmap=\n");
+			dump_one_segment(sit_area_bitmap, segno);
+			return;
+		}
+	}
 }

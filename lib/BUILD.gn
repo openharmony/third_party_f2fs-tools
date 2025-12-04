@@ -5,6 +5,7 @@
 # published by the Free Software Foundation.
 
 import("//build/ohos.gni")
+
 config("f2fs-defaults") {
   cflags = [
     "-Wall",
@@ -29,9 +30,15 @@ ohos_shared_library("libf2fs") {
     "libf2fs_io.c",
     "libf2fs_zoned.c",
     "nls_utf8.c",
+    "libf2fs_log.c",
+    "libf2fs_dmd.c"
   ]
 
   include_dirs = [ "." ]
+
+  external_deps = [
+    "bounds_checking_function:libsec_static",
+  ]
 
   configs = [
     ":f2fs-defaults",

@@ -250,6 +250,7 @@ out:
 static void dump_data_blk(struct f2fs_sb_info *sbi, __u64 offset, u32 blkaddr)
 {
 	char buf[F2FS_BLKSIZE];
+	int ret;
 
 	if (c.show_file_map) {
 		if (c.show_file_map_max_offset < offset) {
@@ -281,14 +282,13 @@ static void dump_data_blk(struct f2fs_sb_info *sbi, __u64 offset, u32 blkaddr)
 	if (blkaddr == NEW_ADDR || !IS_VALID_BLK_ADDR(sbi, blkaddr)) {
 		memset(buf, 0, F2FS_BLKSIZE);
 	} else {
-		int ret;
-
 		ret = dev_read_block(buf, blkaddr);
 		ASSERT(ret >= 0);
 	}
 
 	/* write blkaddr */
-	dev_write_dump(buf, offset, F2FS_BLKSIZE);
+	ret = dev_write_dump(buf, offset, F2FS_BLKSIZE);
+	ASSERT(ret >= 0);
 }
 
 static void dump_node_blk(struct f2fs_sb_info *sbi, int ntype,
@@ -298,6 +298,7 @@ static void dump_node_blk(struct f2fs_sb_info *sbi, int ntype,
 	struct f2fs_node *node_blk;
 	u32 skip = 0;
 	u32 i, idx = 0;
+	int ret;
 
 	switch (ntype) {
 	case TYPE_DIRECT_NODE:
@@ -323,7 +324,8 @@ static void dump_node_blk(struct f2fs_sb_info *sbi, int ntype,
 	node_blk = calloc(BLOCK_SZ, 1);
 	ASSERT(node_blk);
 
-	dev_read_block(node_blk, ni.blk_addr);
+	ret = dev_read_block(node_blk, ni.blk_addr);
+	ASSERT(ret >= 0);
 
 	for (i = 0; i < idx; i++) {
 		switch (ntype) {
@@ -353,17 +355,27 @@ static void dump_node_blk(struct f2fs_sb_info *sbi, int ntype,
 static void dump_xattr(struct f2fs_sb_info *sbi, struct f2fs_node *node_blk)
 {
 	void *xattr;
+	void *last_base_addr;
 	struct f2fs_xattr_entry *ent;
 	char xattr_name[F2FS_NAME_LEN] = {0};
+	u64 max_total_xattr_size = XATTR_SIZE(&node_blk->i);
 	int ret;
 
-	xattr = read_all_xattrs(sbi, node_blk);
+	xattr = read_all_xattrs(sbi, node_blk, true);
 	if (!xattr)
 		return;
 
-	list_for_each_xattr(ent, xattr) {
+	last_base_addr = (void *)xattr + XATTR_SIZE(&node_blk->i);
+
+	list_for_each_xattr(ent, xattr, max_total_xattr_size) {
 		char *name = strndup(ent->e_name, ent->e_name_len);
 		void *value = ent->e_name + ent->e_name_len;
+
+		if ((void *)(ent) + sizeof(__u32) > last_base_addr ||
+			(void *)XATTR_NEXT_ENTRY(ent) > last_base_addr) {
+			MSG(0, "xattr entry crosses the end of xattr space\n");
+			break;
+		}
 
 		if (!name)
 			continue;
@@ -425,12 +437,14 @@ static int dump_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 	u32 i = 0;
 	u64 ofs = 0;
 	u32 addr_per_block;
+	int ret;
 
 	if((node_blk->i.i_inline & F2FS_INLINE_DATA)) {
 		DBG(3, "ino[0x%x] has inline data!\n", nid);
 		/* recover from inline data */
-		dev_write_dump(((unsigned char *)node_blk) + INLINE_DATA_OFFSET,
+		ret = dev_write_dump(((unsigned char *)node_blk) + INLINE_DATA_OFFSET,
 						0, MAX_INLINE_DATA(node_blk));
+		ASSERT(ret >= 0);
 		return -1;
 	}
 
@@ -473,7 +487,7 @@ static int dump_file(struct f2fs_sb_info *sbi, struct node_info *ni,
 				struct f2fs_node *node_blk, int force)
 {
 	struct f2fs_inode *inode = &node_blk->i;
-	u32 imode = le16_to_cpu(inode->i_mode);
+	u16 imode = le16_to_cpu(inode->i_mode);
 	u32 namelen = le32_to_cpu(inode->i_namelen);
 	char name[F2FS_NAME_LEN + 1] = {0};
 	char path[1024] = {0};
@@ -593,7 +607,8 @@ int dump_node(struct f2fs_sb_info *sbi, nid_t nid, int force)
 		goto out;
 	}
 
-	dev_read_block(node_blk, ni.blk_addr);
+	ret = dev_read_block(node_blk, ni.blk_addr);
+	ASSERT(ret >= 0);
 
 	if (ni.blk_addr == 0x0)
 		MSG(force, "Invalid nat entry\n\n");

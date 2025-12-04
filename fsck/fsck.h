@@ -12,6 +12,8 @@
 #define _FSCK_H_
 
 #include "f2fs.h"
+#include "queue.h"
+#include "xattr.h"
 
 enum {
 	FSCK_SUCCESS                 = 0,
@@ -86,6 +88,21 @@ struct f2fs_dentry {
 	struct f2fs_dentry *next;
 };
 
+enum {
+	DATA,
+	NODE,
+	MAX_TYPE
+};
+
+struct sum_cache {
+	unsigned int segno;
+	struct f2fs_summary_block *sum_blk;
+	struct list_head list;
+};
+#define MAX_SUM_CACHE_CNT 20
+#define HASHTABLE_SIZE 10
+
+#include <pthread.h>
 struct f2fs_fsck {
 	struct f2fs_sb_info sbi;
 
@@ -104,6 +121,7 @@ struct f2fs_fsck {
 	} chk;
 
 	struct hard_link_node *hard_link_list_head;
+	struct dedup_inner_node *dedup_inner_list_head;
 
 	char *main_seg_usage;
 	char *main_area_bitmap;
@@ -124,6 +142,19 @@ struct f2fs_fsck {
 	u32 nat_valid_inode_cnt;
 
 	struct quota_ctx *qctx;
+
+	int force_drop_recovery;
+
+	/* thread for async readahead queue: [0] for DATA, [1] for NODE */
+	struct list_head ra_queue[MAX_TYPE];
+	pthread_t thread[MAX_TYPE];
+	pthread_cond_t cond[MAX_TYPE];
+	pthread_mutex_t mutex[MAX_TYPE];
+	int quit_thread[MAX_TYPE];
+
+	/* SSA block cache LRU hash table: [0] for DATA, [1] for NODE */
+	struct list_head sum_cache_head[MAX_TYPE][HASHTABLE_SIZE];
+	int sum_cache_cnt[MAX_TYPE][HASHTABLE_SIZE];
 };
 
 #define BLOCK_SZ		4096
@@ -158,6 +189,9 @@ struct selabel_handle;
 
 static inline bool need_fsync_data_record(struct f2fs_sb_info *sbi)
 {
+	if (is_set_ckpt_flags(F2FS_CKPT(sbi), CP_DISABLED_FLAG)) {
+		return false;
+	}
 	return !is_set_ckpt_flags(F2FS_CKPT(sbi), CP_UMOUNT_FLAG) ||
 		c.zoned_model == F2FS_ZONED_HM;
 }
@@ -214,9 +248,11 @@ extern void build_nat_area_bitmap(struct f2fs_sb_info *);
 extern void build_sit_area_bitmap(struct f2fs_sb_info *);
 extern int f2fs_set_main_bitmap(struct f2fs_sb_info *, u32, int);
 extern int f2fs_set_sit_bitmap(struct f2fs_sb_info *, u32);
-extern void fsck_init(struct f2fs_sb_info *);
+/* only when caller from do_fsck, the caller_is_fsck = true */
+extern void fsck_init(struct f2fs_sb_info *, bool);
 extern int fsck_verify(struct f2fs_sb_info *);
-extern void fsck_free(struct f2fs_sb_info *);
+/* only when caller from do_fsck, the caller_is_fsck = true */
+extern void fsck_free(struct f2fs_sb_info *, bool);
 extern int f2fs_ra_meta_pages(struct f2fs_sb_info *, block_t, int, int);
 extern int f2fs_do_mount(struct f2fs_sb_info *);
 extern void f2fs_do_umount(struct f2fs_sb_info *);
@@ -248,12 +284,14 @@ extern void get_current_sit_page(struct f2fs_sb_info *,
 extern void rewrite_current_sit_page(struct f2fs_sb_info *, unsigned int,
 			struct f2fs_sit_block *);
 
-extern u32 update_nat_bits_flags(struct f2fs_super_block *,
-				struct f2fs_checkpoint *, u32);
-extern void write_nat_bits(struct f2fs_sb_info *, struct f2fs_super_block *,
-			struct f2fs_checkpoint *, int);
+extern int sanity_check_nid(struct f2fs_sb_info *, u32 , struct f2fs_node *,
+		enum FILE_TYPE, enum NODE_TYPE, struct node_info *);
+extern int f2fs_test_main_bitmap(struct f2fs_sb_info *, u32);
+extern int f2fs_clear_main_bitmap(struct f2fs_sb_info *, u32);
+
 extern unsigned int get_usable_seg_count(struct f2fs_sb_info *);
 extern bool is_usable_seg(struct f2fs_sb_info *, unsigned int);
+extern bool is_special_orphan_file(struct f2fs_inode *, enum FILE_TYPE);
 
 /* dump.c */
 struct dump_option {
@@ -327,8 +365,9 @@ int f2fs_add_link(struct f2fs_sb_info *, struct f2fs_node *,
 		const unsigned char *, int, nid_t, int, block_t, int);
 struct hardlink_cache_entry *f2fs_search_hardlink(struct f2fs_sb_info *sbi,
 						struct dentry *de);
+void fsck_disconnect_file(struct f2fs_sb_info *sbi, nid_t ino, bool dealloc);
 
 /* xattr.c */
-void *read_all_xattrs(struct f2fs_sb_info *, struct f2fs_node *);
+void *read_all_xattrs(struct f2fs_sb_info *, struct f2fs_node *, bool);
 
 #endif /* _FSCK_H_ */

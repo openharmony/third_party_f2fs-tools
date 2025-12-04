@@ -2,7 +2,7 @@
     "name": "@ohos/f2fs-tools",
     "description": "The f2fs-tools package contains the utilities for handling the f2fs file system.",
     "version": "3.1",
-    "license": "GPL-2.0",
+    "license": "GNU GPL-2.0",
     "publishAs": "code-segment",
     "segment": {
         "destPath": "third_party/f2fs-tools"
@@ -24,14 +24,23 @@
         "rom": "",
         "ram": "",
         "deps": {
-            "components": [ "e2fsprogs" ],
+            "components": [
+                "bounds_checking_function",
+                "e2fsprogs"
+            ],
             "third_party": []
         },
         "build": {
             "sub_component": [],
             "inner_kits": [
                 {
-                    "name": "//third_party/f2fs-tools/lib:libf2fs"
+                    "name": "//third_party/f2fs-tools/lib:libf2fs",
+                    "header": {
+                      "header_files": [
+                        "utf8data.h"
+                      ],
+                      "header_base": "//third_party/f2fs-tools/lib"
+                    }
                 },
                 {
                     "name": "//third_party/f2fs-tools/fsck:fsck.f2fs"

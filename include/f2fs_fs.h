@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <time.h>
+#include <f2fs_ext.h>
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -61,6 +62,8 @@
 #include <selinux/selinux.h>
 #include <selinux/label.h>
 #endif
+
+#include "../tools/f2fs_tools/f2fs_tools.h"
 
 #ifdef UNUSED
 #elif defined(__GNUC__)
@@ -237,13 +240,18 @@ static inline uint64_t bswap_64(uint64_t val)
 #define FIX_MSG(fmt, ...)						\
 	do {								\
 		printf("[FIX] (%s:%4d) ", __func__, __LINE__);		\
+		SLOG("[FIX] (%s:%4d) ", __func__, __LINE__);		\
 		printf(" --> "fmt"\n", ##__VA_ARGS__);			\
+		SLOG(" --> "fmt"\n", ##__VA_ARGS__);		\
 	} while (0)
 
 #define ASSERT_MSG(fmt, ...)						\
 	do {								\
 		printf("[ASSERT] (%s:%4d) ", __func__, __LINE__);	\
+		SLOG("[ASSERT] (%s:%4d) ", __func__, __LINE__);		\
 		printf(" --> "fmt"\n", ##__VA_ARGS__);			\
+		SLOG(" --> "fmt"\n", ##__VA_ARGS__);		\
+		DMD_ASSERT_MSG(__func__, __LINE__, fmt, ##__VA_ARGS__); \
 		c.bug_on = 1;						\
 	} while (0)
 
@@ -252,19 +260,24 @@ static inline uint64_t bswap_64(uint64_t val)
 		if (!(exp)) {						\
 			printf("[ASSERT] (%s:%4d) %s\n",		\
 					__func__, __LINE__, #exp);	\
-			exit(-1);					\
+			SLOG("[ASSERT] (%s:%4d) %s\n",		\
+					__func__, __LINE__, #exp);		\
+			F2FS_EXT_EXIT();			\
+			exit(-1);				\
 		}							\
 	} while (0)
 
 #define ERR_MSG(fmt, ...)						\
 	do {								\
 		printf("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__); \
+		SLOG("[%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);		\
 	} while (0)
 
 #define MSG(n, fmt, ...)						\
 	do {								\
 		if (c.dbg_lv >= n && !c.layout && !c.show_file_map) {	\
 			printf(fmt, ##__VA_ARGS__);			\
+			SLOG(fmt, ##__VA_ARGS__);		\
 		}							\
 	} while (0)
 
@@ -273,6 +286,8 @@ static inline uint64_t bswap_64(uint64_t val)
 		if (c.dbg_lv >= n && !c.layout && !c.show_file_map) {	\
 			printf("[%s:%4d] " fmt,				\
 				__func__, __LINE__, ##__VA_ARGS__);	\
+			SLOG("[%s:%4d] " fmt,				\
+				__func__, __LINE__, ##__VA_ARGS__);		\
 		}							\
 	} while (0)
 
@@ -280,52 +295,72 @@ static inline uint64_t bswap_64(uint64_t val)
 #define DISP(fmt, ptr, member)				\
 	do {						\
 		printf("%-30s" fmt, #member, ((ptr)->member));	\
+		SLOG("%-30s" fmt, #member, ((ptr)->member));		\
 	} while (0)
 
 #define DISP_u16(ptr, member)						\
 	do {								\
 		assert(sizeof((ptr)->member) == 2);			\
-		if (c.layout)						\
+		if (c.layout) {						\
 			printf("%-30s %u\n",				\
 			#member":", le16_to_cpu(((ptr)->member)));	\
-		else							\
+			SLOG("%-30s %u\n",				\
+			#member":", le16_to_cpu(((ptr)->member)));		\
+		} else {							\
 			printf("%-30s" "\t\t[0x%8x : %u]\n",		\
 			#member, le16_to_cpu(((ptr)->member)),		\
 			le16_to_cpu(((ptr)->member)));			\
+			SLOG("%-30s" "\t\t[0x%8x : %u]\n",		\
+			#member, le16_to_cpu(((ptr)->member)),		\
+			le16_to_cpu(((ptr)->member)));		\
+		}	\
 	} while (0)
 
 #define DISP_u32(ptr, member)						\
 	do {								\
 		assert(sizeof((ptr)->member) <= 4);			\
-		if (c.layout)						\
+		if (c.layout) {						\
 			printf("%-30s %u\n",				\
 			#member":", le32_to_cpu(((ptr)->member)));	\
-		else							\
+			SLOG("%-30s %u\n",				\
+			#member":", le32_to_cpu(((ptr)->member)));		\
+		} else {							\
 			printf("%-30s" "\t\t[0x%8x : %u]\n",		\
 			#member, le32_to_cpu(((ptr)->member)),		\
 			le32_to_cpu(((ptr)->member)));			\
+			SLOG("%-30s" "\t\t[0x%8x : %u]\n",		\
+			#member, le32_to_cpu(((ptr)->member)),		\
+			le32_to_cpu(((ptr)->member)));		\
+		}	\
 	} while (0)
 
 #define DISP_u64(ptr, member)						\
 	do {								\
 		assert(sizeof((ptr)->member) == 8);			\
-		if (c.layout)						\
+		if (c.layout) {						\
 			printf("%-30s %" PRIu64 "\n",			\
 			#member":", le64_to_cpu(((ptr)->member)));	\
-		else							\
+			SLOG("%-30s %" PRIu64 "\n",			\
+			#member":", le64_to_cpu(((ptr)->member)));		\
+		} else {							\
 			printf("%-30s" "\t\t[0x%8" PRIx64 " : %" PRIu64 "]\n",	\
 			#member, le64_to_cpu(((ptr)->member)),		\
 			le64_to_cpu(((ptr)->member)));			\
+			SLOG("%-30s" "\t\t[0x%8" PRIx64 " : %" PRIu64 "]\n",	\
+			#member, le64_to_cpu(((ptr)->member)),		\
+			le64_to_cpu(((ptr)->member)));		\
+		}	\
 	} while (0)
 
 #define DISP_utf(ptr, member)						\
 	do {								\
-		if (c.layout)						\
-			printf("%-30s %s\n", #member":",		\
-					((ptr)->member)); 		\
-		else							\
-			printf("%-30s" "\t\t[%s]\n", #member,		\
-					((ptr)->member));		\
+		if (c.layout) {						\
+			printf("%-30s %s\n", #member":", ((ptr)->member));		\
+			SLOG("%-30s %s\n", #member":", ((ptr)->member));		\
+		} else {							\
+			printf("%-30s" "\t\t[%s]\n", #member, ((ptr)->member));		\
+			SLOG("%-30s" "\t\t[%s]\n", #member, ((ptr)->member));		\
+		}	\
 	} while (0)
 
 /* Display to buffer */
@@ -372,6 +407,8 @@ static inline uint64_t bswap_64(uint64_t val)
 #define VERSION_LEN		256
 #define VERSION_TIMESTAMP_LEN	4
 #define VERSION_NAME_LEN	(VERSION_LEN - VERSION_TIMESTAMP_LEN)
+#define F2FS_LARGE_NAT_BITMAP_MIN_SIZE 512 /* F2FS min GB when enable large nat bitmap */
+#define F2FS_MIN_COMPRESS_LOG_SIZE 3
 
 #define LPF "lost+found"
 
@@ -584,6 +621,10 @@ struct f2fs_configuration {
 #define get_sb_le64(member)			le64_to_cpu(sb->member)
 #define get_sb_le32(member)			le32_to_cpu(sb->member)
 #define get_sb_le16(member)			le16_to_cpu(sb->member)
+
+#define set_newsb_le64(member, val)		(new_sb->member = cpu_to_le64(val))
+#define set_newsb_le32(member, val)		(new_sb->member = cpu_to_le32(val))
+#define set_newsb_le16(member, val)		(new_sb->member = cpu_to_le16(val))
 #define get_newsb_le64(member)			le64_to_cpu(new_sb->member)
 #define get_newsb_le32(member)			le32_to_cpu(new_sb->member)
 #define get_newsb_le16(member)			le16_to_cpu(new_sb->member)
@@ -618,6 +659,16 @@ struct f2fs_configuration {
 				} 					\
 				t; \
 			})
+
+#define set_newsb(member, val)						\
+			do {						\
+				typeof(new_sb->member) t = (val);		\
+				switch (sizeof(t)) {			\
+				case 8: set_newsb_le64(member, t); break;	\
+				case 4: set_newsb_le32(member, t); break;	\
+				case 2: set_newsb_le16(member, t); break;	\
+				}					\
+			} while(0)
 
 #define set_cp_le64(member, val)		(cp->member = cpu_to_le64(val))
 #define set_cp_le32(member, val)		(cp->member = cpu_to_le32(val))
@@ -701,10 +752,12 @@ enum {
 #define F2FS_MAX_EXTENSION		64	/* # of extension entries */
 #define F2FS_EXTENSION_LEN		8	/* max size of extension */
 #define F2FS_BLK_ALIGN(x)	(((x) + F2FS_BLKSIZE - 1) / F2FS_BLKSIZE)
+#define F2FS_GB_SHIFT 30
 
 #define NULL_ADDR		0x0U
 #define NEW_ADDR		-1U
 #define COMPRESS_ADDR		-2U
+#define DEDUP_ADDR		-3U   /* used as dedup addresses */
 
 #define F2FS_ROOT_INO(sbi)	(sbi->root_ino_num)
 #define F2FS_NODE_INO(sbi)	(sbi->node_ino_num)
@@ -747,6 +800,7 @@ enum {
 #define F2FS_FEATURE_CASEFOLD		0x1000
 #define F2FS_FEATURE_COMPRESSION	0x2000
 #define F2FS_FEATURE_RO			0x4000
+#define F2FS_FEATURE_DEDUP		0x8000
 
 #define MAX_VOLUME_NAME		512
 
@@ -851,13 +905,12 @@ static_assert(sizeof(struct f2fs_super_block) == 3072, "");
 /*
  * For checkpoint
  */
-#define CP_RESIZEFS_FLAG                0x00004000
-#define CP_DISABLED_FLAG		0x00001000
-#define CP_QUOTA_NEED_FSCK_FLAG		0x00000800
-#define CP_LARGE_NAT_BITMAP_FLAG	0x00000400
+#define CP_RESIZEFS_FLAG		0x00008000
+#define CP_DISABLED_FLAG		0x00004000
+#define CP_QUOTA_NEED_FSCK_FLAG		0x00001000
+#define CP_LARGE_NAT_BITMAP_FLAG	0x00002000
 #define CP_NOCRC_RECOVERY_FLAG	0x00000200
 #define CP_TRIMMED_FLAG		0x00000100
-#define CP_NAT_BITS_FLAG	0x00000080
 #define CP_CRC_RECOVERY_FLAG	0x00000040
 #define CP_FASTBOOT_FLAG	0x00000020
 #define CP_FSCK_FLAG		0x00000010
@@ -865,6 +918,8 @@ static_assert(sizeof(struct f2fs_super_block) == 3072, "");
 #define CP_COMPACT_SUM_FLAG	0x00000004
 #define CP_ORPHAN_PRESENT_FLAG	0x00000002
 #define CP_UMOUNT_FLAG		0x00000001
+#define CP_APPEND_SIT_FLAG	0x00000400
+#define CP_APPEND_NAT_FLAG	0x00000800
 
 #define F2FS_CP_PACKS		2	/* # of checkpoint packs */
 
@@ -1008,6 +1063,10 @@ static_assert(sizeof(struct f2fs_extent) == 12, "");
 
 #define F2FS_CASEFOLD_FL	0x40000000 /* Casefolded file */
 #define IS_CASEFOLDED(dir)     ((dir)->i_flags & F2FS_CASEFOLD_FL)
+#define F2FS_OLD_ATTRIBUTE_SIZE  (offsetof(struct f2fs_inode, i_addr))
+#define F2FS_FITS_IN_INODE(extra_isize, field, field_size) \
+	((offsetof(struct f2fs_inode, field) + field_size) \
+	  <= (F2FS_OLD_ATTRIBUTE_SIZE + extra_isize))
 
 /*
  * fsck i_compr_blocks counting helper
@@ -1072,6 +1131,9 @@ struct f2fs_inode {
 			__u8 i_compress_algrithm;	/* compress algrithm */
 			__u8 i_log_cluster_size;	/* log of cluster size */
 			__le16 i_padding;		/* padding */
+			__le32 i_inner_ino;		/* for layered inode */
+			__le32 i_dedup_flags;	/* dedup file attributes */
+			__le32 i_dedup_rsvd;	/* reserved for dedup */
 			__le32 i_extra_end[0];	/* for attribute size calculation */
 		} __attribute__((packed));
 		__le32 i_addr[DEF_ADDRS_PER_INODE];	/* Pointers to data blocks */
@@ -1081,7 +1143,7 @@ struct f2fs_inode {
 };
 
 static_assert(offsetof(struct f2fs_inode, i_extra_end) -
-	      offsetof(struct f2fs_inode, i_extra_isize) == 36, "");
+	      offsetof(struct f2fs_inode, i_extra_isize) == 48, "");
 static_assert(sizeof(struct f2fs_inode) == 4072, "");
 
 struct direct_node {
@@ -1255,6 +1317,10 @@ static_assert(sizeof(struct summary_footer) == 5, "");
 				sizeof(struct sit_journal_entry))
 #define SIT_JOURNAL_RESERVED	((SUM_JOURNAL_SIZE - 2) %\
 				sizeof(struct sit_journal_entry))
+#define NAT_APPEND_JOURNAL_ENTRIES	(F2FS_BLKSIZE /\
+					sizeof(struct nat_journal_entry))
+#define SIT_APPEND_JOURNAL_ENTRIES	(F2FS_BLKSIZE /\
+					sizeof(struct sit_journal_entry))
 
 /*
  * Reserved area should make size of f2fs_extra_info equals to
@@ -1410,6 +1476,7 @@ enum FILE_TYPE {
 	F2FS_FT_SYMLINK,
 	F2FS_FT_MAX,
 	/* added for fsck */
+	F2FS_FT_DEDUP_INNER,
 	F2FS_FT_ORPHAN,
 	F2FS_FT_XATTR,
 	F2FS_FT_LAST_FILE_TYPE = F2FS_FT_XATTR,
@@ -1647,15 +1714,9 @@ static inline double get_best_overprovision(struct f2fs_super_block *sb)
 	return max_ovp;
 }
 
-static inline __le64 get_cp_crc(struct f2fs_checkpoint *cp)
+static inline uint32_t count_overprovision(struct f2fs_super_block *sb)
 {
-	uint64_t cp_ver = get_cp(checkpoint_ver);
-	size_t crc_offset = get_cp(checksum_offset);
-	uint32_t crc = le32_to_cpu(*(__le32 *)((unsigned char *)cp +
-							crc_offset));
-
-	cp_ver |= ((uint64_t)crc << 32);
-	return cpu_to_le64(cp_ver);
+	return (2 * (100 / c.new_overprovision + 1) + 6) * get_sb(segs_per_sec);
 }
 
 static inline int exist_qf_ino(struct f2fs_super_block *sb)
@@ -1746,6 +1807,7 @@ struct feature feature_table[] = {					\
 	{ "casefold",			F2FS_FEATURE_CASEFOLD },	\
 	{ "compression",		F2FS_FEATURE_COMPRESSION },	\
 	{ "ro",				F2FS_FEATURE_RO},		\
+	{ "dedup",			F2FS_FEATURE_DEDUP },		\
 	{ NULL,				0x0},				\
 };
 
@@ -1817,6 +1879,14 @@ static inline int parse_root_owner(char *ids,
 	*root_uid = atoi(uid);
 	*root_gid = atoi(gid);
 	return 0;
+}
+
+static inline bool is_fs_layout_unchanged(struct f2fs_super_block *sb, struct f2fs_super_block *new_sb)
+{
+	return (get_sb(main_blkaddr) == get_newsb(main_blkaddr)) &&
+		(get_sb(sit_blkaddr) == get_newsb(sit_blkaddr) &&
+		(get_sb(nat_blkaddr) == get_newsb(nat_blkaddr)) &&
+		(get_sb(ssa_blkaddr) == get_newsb(ssa_blkaddr)));
 }
 
 /*
