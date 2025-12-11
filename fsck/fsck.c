@@ -2687,9 +2687,15 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 	int ret;
 	uint32_t crc = 0;
 	struct f2fs_journal *nat_journal = CURSEG_I(sbi, CURSEG_HOT_DATA)->journal;
+	uint64_t cp_ver = get_cp(checkpoint_ver);
 
 	/* should call from fsck */
 	ASSERT(c.func == FSCK);
+
+	if (c.permissive && c.record_fsync_failed) {
+		/* drop all fsync node by changing cp version */
+		set_cp(checkpoint_ver, cp_ver + 1);
+	}
 
 	if (is_set_ckpt_flags(cp, CP_ORPHAN_PRESENT_FLAG)) {
 		orphan_blks = __start_sum_addr(sbi) - 1;
