@@ -3572,6 +3572,7 @@ next:
 				    blkaddr,
 				    next_blkaddr_of_node(node_blk));
 			err = -1;
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_RECORD_FSYNC_NODE_LOOP);
 			break;
 		}
 
@@ -3591,17 +3592,24 @@ static int do_record_fsync_data(struct f2fs_sb_info *sbi,
 	unsigned int ofs_in_node = 0;
 	unsigned int start, end;
 	int err = 0, recorded = 0;
+	block_t node_blkaddr;
 
 	segno = GET_SEGNO(sbi, blkaddr);
 	se = get_seg_entry(sbi, segno);
 	offset = OFFSET_IN_SEG(sbi, blkaddr);
 
 	if (f2fs_test_bit(offset, (char *)se->cur_valid_map)) {
-		ASSERT(0);
+		ERR_MSG("recover_data: wrong SIT bitmap,"
+			" ino = %u, nid = %u, blkaddr = %u\n",
+			ino_of_node(node_blk), ofs_of_node(node_blk), blkaddr);
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_RECORD_FSYNC_WRONG_SIT_BITMAP);
 		return -1;
 	}
 	if (f2fs_test_bit(offset, (char *)se->ckpt_valid_map)) {
-		ASSERT(0);
+		ERR_MSG("recover_data: wrong ckpt SIT bitmap,"
+			" ino = %u, nid = %u, blkaddr = %u\n",
+			ino_of_node(node_blk), ofs_of_node(node_blk), blkaddr);
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_RECORD_FSYNC_WRONG_CKPT_SIT_BITMAP);
 		return -1;
 	}
 
@@ -3624,6 +3632,7 @@ static int do_record_fsync_data(struct f2fs_sb_info *sbi,
 	/* step 3: recover data indices */
 	start = start_bidx_of_node(ofs_of_node(node_blk), node_blk);
 	end = start + ADDRS_PER_PAGE(sbi, node_blk, NULL);
+	node_blkaddr = blkaddr;
 
 	for (; start < end; start++, ofs_in_node++) {
 		blkaddr = datablock_addr(node_blk, ofs_in_node);
@@ -3632,6 +3641,11 @@ static int do_record_fsync_data(struct f2fs_sb_info *sbi,
 			continue;
 
 		if (!f2fs_is_valid_blkaddr(sbi, blkaddr, META_POR)) {
+			ERR_MSG("recover_data: invalid data blkaddr,"
+				" ino = %u, nid = %u, node_blkaddr = %u, data_blkaddr = %u\n",
+				ino_of_node(node_blk), ofs_of_node(node_blk),
+				node_blkaddr, blkaddr);
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_RECORD_FSYNC_INVALID_DATA_BLKADDR);
 			err = -1;
 			goto out;
 		}
@@ -3719,8 +3733,10 @@ static int record_fsync_data(struct f2fs_sb_info *sbi)
 		return 0;
 
 	ret = find_fsync_inode(sbi, &inode_list);
-	if (ret)
+	if (ret) {
+		ERR_MSG("find_fsync_inode failed\n");
 		goto out;
+	}
 
 	ret = late_build_segment_manager(sbi);
 	if (ret < 0) {
@@ -3729,6 +3745,8 @@ static int record_fsync_data(struct f2fs_sb_info *sbi)
 	}
 
 	ret = traverse_dnodes(sbi, &inode_list);
+	if (ret)
+		ERR_MSG("traverse_dnodes failed\n");
 out:
 	destroy_fsync_dnodes(&inode_list);
 	return ret;
@@ -3867,7 +3885,10 @@ out:
 	if (record_fsync_data(sbi)) {
 		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_RECORD_FSYNC_DATA_ERROR);
 		ERR_MSG("record_fsync_data failed\n");
-		return -1;
+		c.record_fsync_failed = true;
+		if (!c.permissive)
+			return -1;
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_IGNORE_RECORD_FSYNC_DATA_ERROR);
 	}
 
 	if (!f2fs_should_proceed(sb, get_cp(ckpt_flags)))
