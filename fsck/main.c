@@ -240,6 +240,7 @@ void f2fs_parse_options(int argc, char *argv[])
 			{"no-kernel-check", no_argument, 0, 2},
 			{"kernel-check", no_argument, 0, 3},
 			{"debug-cache", no_argument, 0, 4},
+			{"permissive", no_argument, 0, 6},
 			{0, 0, 0, 0}
 		};
 
@@ -263,6 +264,10 @@ void f2fs_parse_options(int argc, char *argv[])
 				break;
 			case 4:
 				c.cache_config.dbg_en = true;
+				break;
+			case 6:
+				c.permissive = true;
+				MSG(0, "Info: Enable permissive check\n");
 				break;
 			case 'a':
 				c.auto_fix = 1;
@@ -850,6 +855,11 @@ static int do_fsck(struct f2fs_sb_info *sbi)
 	u32 blk_cnt;
 	struct f2fs_compr_blk_cnt cbc;
 	errcode_t ret;
+
+	if (c.permissive) {
+		MSG(0, "Info: do fsck with permissive mode\n");
+		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_PERMISSIVE_FSCK);
+	}
 
 	fsck_init(sbi, true);
 

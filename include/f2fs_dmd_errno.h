@@ -181,6 +181,24 @@ extern "C" {
 /* full disk fsck triggered */
 #define PR_FULL_DISK_FSCK               0x39
 
+/* permissive fsck check enabled */
+#define PR_PERMISSIVE_FSCK              0x3A
+
+/* fsync data error ignored */
+#define PR_IGNORE_RECORD_FSYNC_DATA_ERROR           0x3B
+
+/* record fsync data error: incorrect SIT bitmap */
+#define PR_RECORD_FSYNC_WRONG_SIT_BITMAP           0x3C
+
+/* record fsync data error: incorrect ckpt SIT bitmap */
+#define PR_RECORD_FSYNC_WRONG_CKPT_SIT_BITMAP          0x3D
+
+/* record fsync data error: invalid data blkaddr */
+#define PR_RECORD_FSYNC_INVALID_DATA_BLKADDR            0x3E
+
+/* record fsync data error: node loop detected */
+#define PR_RECORD_FSYNC_NODE_LOOP           0x3F
+
 #define PR_SIT_INVALID_BLOCK_BITMAP     0x40
 
 #define PR_MULTI_HARD_LINK_FILES        0x41
