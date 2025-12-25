@@ -552,8 +552,6 @@ struct f2fs_configuration {
 	bool quota_fixed;
 	int alloc_failed;
 	int auto_fix;
-	bool permissive;
-	bool record_fsync_failed;
 	int layout;
 	int show_file_map;
 	u64 show_file_map_max_offset;
@@ -606,6 +604,8 @@ struct f2fs_configuration {
 
 	/* compression support for sload.f2fs */
 	compress_config_t compress;
+	bool permissive;
+	bool record_fsync_failed;
 };
 
 #ifdef CONFIG_64BIT
