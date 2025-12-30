@@ -407,7 +407,7 @@ static inline uint64_t bswap_64(uint64_t val)
 #define VERSION_LEN		256
 #define VERSION_TIMESTAMP_LEN	4
 #define VERSION_NAME_LEN	(VERSION_LEN - VERSION_TIMESTAMP_LEN)
-#define F2FS_LARGE_NAT_BITMAP_MIN_SIZE 128 /* F2FS min GB when enable large nat bitmap */
+#define F2FS_LARGE_NAT_BITMAP_MIN_SIZE 256 /* F2FS min GB when enable large nat bitmap */
 #define F2FS_MIN_COMPRESS_LOG_SIZE 3
 
 #define LPF "lost+found"
