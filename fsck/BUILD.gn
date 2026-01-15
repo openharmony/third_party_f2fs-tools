@@ -60,7 +60,7 @@ ohos_executable("fsck.f2fs") {
   deps = [ "//third_party/f2fs-tools/lib:libf2fs" ]
 
   external_deps = [
-    "bounds_checking_function:libsec_static",
+    "bounds_checking_function:libsec_shared",
     "e2fsprogs:libdacconfig",
   ]
 
