@@ -16,6 +16,9 @@ config("f2fs-defaults") {
     "-Wno-unused-parameter",
     "-Wno-incompatible-pointer-types",
   ]
+  if (current_toolchain == host_toolchain) {
+    cflags += ["-DCONF_TARGET_HOST"]
+  }
   ldflags = [ "-lpthread" ]
 }
 

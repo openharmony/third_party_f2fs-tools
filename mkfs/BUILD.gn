@@ -13,6 +13,9 @@ config("f2fs-defaults") {
     "-Wno-string-plus-int",
     "-Wno-error=format",
   ]
+  if (current_toolchain == host_toolchain) {
+    cflags += ["-DCONF_TARGET_HOST"]
+  }
 }
 
 ###################################################

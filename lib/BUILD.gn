@@ -15,6 +15,9 @@ config("f2fs-defaults") {
     "-Wno-unused-parameter",
     "-Wno-format",
   ]
+  if (current_toolchain == host_toolchain) {
+    cflags += ["-DCONF_TARGET_HOST"]
+  }
 }
 config("libf2fs-headers") {
   include_dirs = [
