@@ -38,4 +38,11 @@ bool f2fs_sanity_check_dedup_inner_nid(struct f2fs_sb_info *sbi,
 void f2fs_inc_inner_actual_links(struct f2fs_sb_info *sbi, nid_t inner_ino);
 void f2fs_fix_dedup_inner_list(struct f2fs_sb_info *sbi);
 void f2fs_check_dedup_extent_info(struct child_info *child);
+
+inline bool is_need_check_dedup_nid(struct child_info *child)
+{
+	return child && child->is_dedup_out_inode && !child->is_unstable_inode;
+}
+
+bool check_dedup_data_blkaddr(struct f2fs_node *node_blk, block_t blkaddr, int *need_fix, int idx);
 #endif /* _DEDUP_H_ */
