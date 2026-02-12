@@ -755,6 +755,7 @@ enum {
 #define F2FS_EXTENSION_LEN		8	/* max size of extension */
 #define F2FS_BLK_ALIGN(x)	(((x) + F2FS_BLKSIZE - 1) / F2FS_BLKSIZE)
 #define F2FS_GB_SHIFT 30
+#define F2FS_VERITY_DATA_ALIGN (64 * 1024) /* verity data is located at the next 64KB-aligned position of i_size */
 
 #define NULL_ADDR		0x0U
 #define NEW_ADDR		-1U
@@ -1061,6 +1062,7 @@ static_assert(sizeof(struct f2fs_extent) == 12, "");
 #define FADVISE_VERITY_BIT	0x40	/* reserved */
 
 #define file_is_encrypt(fi)      ((fi)->i_advise & FADVISE_ENCRYPT_BIT)
+#define file_is_verity(fi)		((fi)->i_advise & FADVISE_VERITY_BIT)
 #define file_enc_name(fi)        ((fi)->i_advise & FADVISE_ENC_NAME_BIT)
 
 #define F2FS_CASEFOLD_FL	0x40000000 /* Casefolded file */
@@ -1686,6 +1688,7 @@ extern uint32_t f2fs_get_usable_segments(struct f2fs_super_block *sb);
 #define SEG_ALIGN(blks)		SIZE_ALIGN(blks, c.blks_per_seg)
 #define ZONE_ALIGN(blks)	SIZE_ALIGN(blks, c.blks_per_seg * \
 					c.segs_per_zone)
+#define F2FS_VERITY_OFFSET(size) (SIZE_ALIGN(size, F2FS_VERITY_DATA_ALIGN) * F2FS_VERITY_DATA_ALIGN)
 
 static inline double get_best_overprovision(struct f2fs_super_block *sb)
 {
