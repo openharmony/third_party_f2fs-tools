@@ -80,6 +80,12 @@ struct child_info {
 	struct extent_info ei;
 	u32 last_blk;
 	u32 i_namelen;  /* dentry namelen */
+	u32 verity_start_ofs; /* verity data position */
+	bool check_verity; /* start to check verity data, only userd in verity file */
+	bool is_dedup_out_inode;
+	bool is_unstable_inode;
+	bool is_verity_inode;
+	u32 ino;
 };
 
 struct f2fs_dentry {
@@ -168,6 +174,12 @@ enum NODE_TYPE {
 	TYPE_INDIRECT_NODE = 53,
 	TYPE_DOUBLE_INDIRECT_NODE = 67,
 	TYPE_XATTR = 77
+};
+
+enum NODE_TYPE_START_IDX {
+	DIRECT_NODE_IDX = 0,
+	INDIRECT_NODE_IDX = 2,
+	DOUBLE_INDIRECT_NODE_IDX = 4,
 };
 
 struct hard_link_node {

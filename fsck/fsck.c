@@ -707,6 +707,11 @@ int fsck_chk_node_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 	if (sanity_check_nid(sbi, nid, node_blk, ftype, ntype, &ni))
 		goto err;
 
+	if (is_need_check_dedup_nid(child) && child->ino != ni.ino) {
+		ASSERT_MSG("dedup inode 0x%x node id 0x%x inconsistent", child->ino, ni.ino);
+		goto err;
+	}
+
 	if (ntype == TYPE_INODE) {
 		struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 
@@ -775,7 +780,7 @@ static void check_extent_info(struct child_info *child,
 		return;
 	}
 
-	if (blkaddr == NULL_ADDR || blkaddr == NEW_ADDR)
+	if (blkaddr == NULL_ADDR || blkaddr == NEW_ADDR || blkaddr == DEDUP_ADDR)
 		is_hole = 1;
 
 	if (pgofs >= ei->fofs && pgofs < ei->fofs + ei->len) {
@@ -856,6 +861,49 @@ static int missing_inline_xattr(struct f2fs_inode *inode)
 		return 1;
 	}
 	return 0;
+}
+
+static bool is_need_chk_verity_blk(struct child_info *child)
+{
+	if (!child->is_verity_inode) {
+		return false;
+	}
+
+	if (child->check_verity) {
+		return true;
+	}
+
+	if (child->pgofs >= child->verity_start_ofs) {
+		child->check_verity = true;
+		return true;
+	}
+	return false;
+}
+
+static bool is_need_chk_verity_nid(struct child_info *child, int idx, struct f2fs_inode *inode)
+{
+	u32 start_ofs = child->pgofs;
+	u32 end_ofs = child->pgofs;
+
+	if (!child->is_verity_inode) {
+		return false;
+	}
+
+	if (child->check_verity) {
+		return true;
+	}
+
+	if (idx >= DIRECT_NODE_IDX && idx < INDIRECT_NODE_IDX) {
+		end_ofs += ADDRS_PER_BLOCK(inode);
+	} else if (idx >= INDIRECT_NODE_IDX && idx < DOUBLE_INDIRECT_NODE_IDX) {
+		end_ofs += ADDRS_PER_BLOCK(inode) * NIDS_PER_BLOCK;
+	} else if (idx == DOUBLE_INDIRECT_NODE_IDX) {
+		end_ofs += ADDRS_PER_BLOCK(inode) * NIDS_PER_BLOCK * NIDS_PER_BLOCK;
+	} else {
+		ASSERT(0);
+	}
+
+	return child->verity_start_ofs >= start_ofs && child->verity_start_ofs < end_ofs;
 }
 
 /* start with valid nid and blkaddr */
@@ -1217,22 +1265,22 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 				addrs_per_blk * NIDS_PER_BLOCK *
 				NIDS_PER_BLOCK) * F2FS_BLKSIZE;
 	}
+
+	child.check_verity = false;
+	child.is_verity_inode = false;
+	if (file_is_verity(&node_blk->i)) {
+		child.verity_start_ofs = F2FS_BLK_ALIGN(F2FS_VERITY_OFFSET(node_blk->i.i_size));
+		child.is_verity_inode = true;
+	}
+	child.is_dedup_out_inode = f2fs_is_out_inode(node_blk);
+	child.is_unstable_inode = f2fs_is_unstable_dedup_inode(node_blk);
+	child.ino = nid;
+
 	for (idx = 0; idx < addrs; idx++, child.pgofs++) {
 		block_t blkaddr = le32_to_cpu(node_blk->i.i_addr[ofs + idx]);
 
-		if (dedup_supported && f2fs_is_out_inode(node_blk)) {
-			if (f2fs_is_unstable_dedup_inode(node_blk) &&
-					blkaddr == DEDUP_ADDR) {
-				continue;
-			}
-			if (!f2fs_is_unstable_dedup_inode(node_blk)) {
-				if (blkaddr != DEDUP_ADDR && c.fix_on) {
-					node_blk->i.i_addr[ofs + idx] =
-						cpu_to_le32(DEDUP_ADDR);
-					need_fix = 1;
-					FIX_MSG("dedup nid [0x%x] i_addr[%d]:%x->DEDUP_ADDR",
-								nid, ofs + idx, blkaddr);
-				}
+		if (dedup_supported && child.is_dedup_out_inode && !is_need_chk_verity_blk(&child)) {
+			if (check_dedup_data_blkaddr(node_blk, blkaddr, &need_fix, ofs + idx)) {
 				continue;
 			}
 		}
@@ -1240,7 +1288,11 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 		/* check extent info */
 		check_extent_info(&child, blkaddr, 0);
 
-		if (blkaddr == NULL_ADDR)
+		/*
+		 * in dedup and verity file, this i_addr after verity data is DEDUP_ADDR,
+		 * so here need to skip.
+		 */
+		if (blkaddr == NULL_ADDR || blkaddr == DEDUP_ADDR)
 			continue;
 		if (blkaddr == COMPRESS_ADDR) {
 			if (!compressed || (child.pgofs &
@@ -1276,9 +1328,10 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 			if (cur_qtype != -1 && blkaddr != NEW_ADDR)
 				qf_last_blkofs[cur_qtype] = child.pgofs;
 		} else if (c.fix_on) {
-			node_blk->i.i_addr[ofs + idx] = 0;
+			block_t addr = is_need_check_dedup_nid(&child) ? DEDUP_ADDR : NULL_ADDR;
+			node_blk->i.i_addr[ofs + idx] = addr;
 			need_fix = 1;
-			FIX_MSG("[0x%x] i_addr[%d] = 0", nid, ofs + idx);
+			FIX_MSG("[0x%x] i_addr[%d] = 0x%x", nid, ofs + idx, addr);
 		}
 	}
 
@@ -1292,17 +1345,6 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 	for (idx = 0; idx < 5; idx++) {
 		nid_t i_nid = le32_to_cpu(node_blk->i.i_nid[idx]);
 
-		if (dedup_supported && f2fs_is_out_inode(node_blk) &&
-				!f2fs_is_unstable_dedup_inode(node_blk)) {
-			if (i_nid != 0 && c.fix_on) {
-				node_blk->i.i_nid[idx] = 0;
-				need_fix = 1;
-				FIX_MSG("dedup nid [0x%x] i_nid[%d]:%x->0",
-					nid, idx, i_nid);
-			}
-			continue;
-		}
-
 		if (idx == 0 || idx == 1)
 			ntype = TYPE_DIRECT_NODE;
 		else if (idx == 2 || idx == 3)
@@ -1311,6 +1353,20 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 			ntype = TYPE_DOUBLE_INDIRECT_NODE;
 		else
 			ASSERT(0);
+
+		if (dedup_supported && is_need_check_dedup_nid(&child) &&
+			!is_need_chk_verity_nid(&child, idx, &node_blk->i)) {
+			if (i_nid != 0 && c.fix_on) {
+				/*
+				 * current dedup truncate will reserve the node id before the one contain verity data,
+				 * and i_blocks will include their count. 
+				 * Therefore, no modifacations will be made be temporarily:
+				 *   node_blk->i.i_nid[idx] = 0;
+				 *   need_fix = 1;
+				 */
+				MSG(3, "dedup inode 0x%x need fix: i_nid[%d]:%x->0\n", nid, idx, i_nid);
+			}
+		}
 
 		if (i_nid == 0x0)
 			goto skip;
@@ -1349,8 +1405,8 @@ check:
 
 	if (child.state & FSCK_UNMATCHED_EXTENT) {
 		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INVALID_EXTENT_VALUE);
-		ASSERT_MSG("ino: 0x%x has wrong ext: [pgofs:%u, blk:%u, len:%u]",
-				nid, child.ei.fofs, child.ei.blk, child.ei.len);
+		ASSERT_MSG("ino: 0x%x has wrong ext: [pgofs:%u, blk:%u, len:%u], verity start offset: %u",
+				nid, child.ei.fofs, child.ei.blk, child.ei.len, child.verity_start_ofs);
 		if (c.fix_on)
 			need_fix = 1;
 	}
@@ -1529,6 +1585,7 @@ int fsck_chk_dnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 	u32 i_flags = le32_to_cpu(inode->i_flags);
 	bool compressed = i_flags & F2FS_COMPR_FL;
 	bool compr_rel = inode->i_inline & F2FS_COMPRESS_RELEASED;
+	bool dedup_supported = c.feature & cpu_to_le32(F2FS_FEATURE_DEDUP);
 	u32 cluster_size = 1 << inode->i_log_cluster_size;
 
 	if (is_special_orphan_file(inode, ftype)) {
@@ -1548,6 +1605,12 @@ int fsck_chk_dnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 
 	for (idx = 0; idx < ADDRS_PER_BLOCK(inode); idx++, child->pgofs++) {
 		block_t blkaddr = le32_to_cpu(node_blk->dn.addr[idx]);
+
+		if (dedup_supported && child->is_dedup_out_inode && !is_need_chk_verity_blk(child)) {
+			if (check_dedup_data_blkaddr(node_blk, blkaddr, &need_fix, idx)) {
+				continue;
+			}
+		}
 
 		check_extent_info(child, blkaddr, 0);
 
@@ -1607,6 +1670,19 @@ int fsck_chk_idnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 	fsck_reada_all_direct_node_blocks(sbi, node_blk);
 
 	for (i = 0; i < NIDS_PER_BLOCK; i++) {
+		nid_t i_nid = le32_to_cpu(node_blk->in.nid[i]);
+
+		if (is_need_check_dedup_nid(child) && !is_need_chk_verity_nid(child, DIRECT_NODE_IDX, inode)) {
+			if (i_nid != 0 && c.fix_on) {
+				/*
+				 * no modifacations will be made be here temporarily:
+				 * node_blk->in.nid[i] = 0;
+				 * need_fix = 1;
+				 */
+				MSG(3, "dedup inode 0x%x need fix: nid[%x]:%x->0\n", node_blk->footer.ino, i, i_nid);
+			}
+		}
+
 		if (le32_to_cpu(node_blk->in.nid[i]) == 0x0)
 			goto skip;
 		ret = fsck_chk_node_blk(sbi, inode,
@@ -1650,6 +1726,19 @@ int fsck_chk_didnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 	fsck_reada_all_direct_node_blocks(sbi, node_blk);
 
 	for (i = 0; i < NIDS_PER_BLOCK; i++) {
+		nid_t i_nid = le32_to_cpu(node_blk->in.nid[i]);
+
+		if (is_need_check_dedup_nid(child) && !is_need_chk_verity_nid(child, INDIRECT_NODE_IDX, inode)) {
+			if (i_nid != 0 && c.fix_on) {
+				/*
+				 * no modifacations will be made be here temporarily:
+				 * node_blk->in.nid[i] = 0;
+				 * need_fix = 1;
+				 */
+				MSG(3, "dedup inode 0x%x need fix: nid[%x]:%x->0\n", node_blk->footer.ino, i, i_nid);
+			}
+		}
+
 		if (le32_to_cpu(node_blk->in.nid[i]) == 0x0)
 			goto skip;
 		ret = fsck_chk_node_blk(sbi, inode,

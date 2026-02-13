@@ -408,8 +408,43 @@ void f2fs_check_dedup_extent_info(struct child_info *child)
 {
     struct extent_info *ei = &child->ei;
 
-    if (!ei->len) {
+    if (!ei->len || (child->is_verity_inode && child->verity_start_ofs <= ei->fofs)) {
         return;
     }
     child->state |= FSCK_UNMATCHED_EXTENT;
+}
+
+bool check_dedup_data_blkaddr(struct f2fs_node *node_blk, block_t blkaddr, int *need_fix, int idx)
+{
+	block_t expect_blkaddr = IS_INODE(node_blk) ? DEDUP_ADDR : NULL_ADDR;
+
+	if (f2fs_is_unstable_dedup_inode(node_blk) && blkaddr == expect_blkaddr) {
+		return true;
+	}
+	if (!f2fs_is_unstable_dedup_inode(node_blk)) {
+        if (blkaddr == expect_blkaddr) {
+            return true;
+        }
+
+		/* 
+		 * in dedup file, there are two cases for the data block address:
+		 * 1. blk_addr in inode: DEDUP_ADDR
+		 * 2. in dnode: NULL_ADDR
+		 */
+        if (!c.fix_on) {
+            ASSERT_MSG("dedup inode 0x%x nid 0x%x need fix: blkaddr[%d]:%x->%x",
+                       node_blk->footer.ino, node_blk->footer.nid, idx, blkaddr, expect_blkaddr);
+        } else {
+			if (IS_INODE(node_blk)) {
+				node_blk->i.i_addr[idx] = cpu_to_le32(expect_blkaddr);
+			} else {
+				node_blk->dn.addr[idx] = cpu_to_le32(expect_blkaddr);
+			}
+			*need_fix = 1;
+			FIX_MSG("dedup inode 0x%x nid 0x%x need fix: blkaddr[%d]:%x->%x", 
+                node_blk->footer.ino, node_blk->footer.nid, idx, blkaddr, expect_blkaddr);
+		}
+		return true;
+	}
+	return false;
 }
