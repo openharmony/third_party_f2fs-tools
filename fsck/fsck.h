@@ -81,7 +81,7 @@ struct child_info {
 	u32 last_blk;
 	u32 i_namelen;  /* dentry namelen */
 	u32 verity_start_ofs; /* verity data start offset */
-	bool check_verity; /* start to check verity data, only userd in verity file */
+	bool check_verity; /* start to check verity data, only used in verity file */
 	bool is_dedup_out_inode; /* inode is dedup and out inode */
 	bool is_unstable_inode; /* inode is dedup file but unstable */
 	bool is_verity_inode;
