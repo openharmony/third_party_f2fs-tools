@@ -103,7 +103,7 @@ const char *media_ext_lists[] = {
 	"vdex", // Android RunTime
 	"so",
 
-	/* android */
+	/* ohos */
 	"hap",
 	"hsp",
 
