@@ -78,6 +78,7 @@ const char *media_ext_lists[] = {
 	"png",
 	"svg",
 	"webp",
+	"astc",
 
 	/* archives */
 	"jar",
@@ -101,6 +102,10 @@ const char *media_ext_lists[] = {
 	"odex", // Android RunTime
 	"vdex", // Android RunTime
 	"so",
+
+	/* android */
+	"hap",
+	"hsp",
 
 	NULL
 };
