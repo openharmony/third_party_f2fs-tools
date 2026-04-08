@@ -129,6 +129,7 @@ void resize_usage()
 	MSG(0, "  -O feature1[,feature2,...] e.g. \"fsprojquota,fscasefold\"\n");
 	MSG(0, "  -C [encoding[:flag1,...]] Support casefolding with optional flags\n");
 	MSG(0, "  -V print the version number and exit\n");
+	MSG(0, "  --meta-no-change do not change meta layout\n");
 	exit(1);
 }
 
@@ -542,13 +543,23 @@ void f2fs_parse_options(int argc, char *argv[])
 #ifdef WITH_RESIZE
 		const char *option_string = "d:fst:O:C:io:V";
 		int val;
+		int opt = 0;
 		char *token;
+		struct option long_opt[] = {
+			{"meta-no-change", no_argument, 0, 1},
+			{0, 0, 0, 0}
+		};
 
 		c.func = RESIZE;
-		while ((option = getopt(argc, argv, option_string)) != EOF) {
+		while ((option = getopt_long(argc, argv, option_string,
+						long_opt, &opt)) != EOF) {
 			int ret = 0;
 
 			switch (option) {
+			case 1:
+				c.meta_no_change = true;
+				MSG(0, "Info: Meta no change\n");
+				break;
 			case 'd':
 				if (!is_digits(optarg)) {
 					err = EWRONG_OPT;
