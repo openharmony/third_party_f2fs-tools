@@ -664,9 +664,22 @@ static int f2fs_resize_check(struct f2fs_sb_info *sbi, struct f2fs_super_block *
  * so we need to revert the old filesystem layout in old_sb, and only increase the segment
  * and section count. The final layout is as follows:
  * | sb | cp |---sit---|----nat----|-----ssa-----|--------main area-------|
+ *
+ * old filesystem layout:
+ * | sb | cp |---sit---|----nat----|-----ssa-----|------main area------|
+ * When the partition size increases, get_new_sb will yield such f2fs filesystem layout:
+ * get_new_sb filesystem layout:
+ * | sb | cp |----sit----|----nat----|------ssa------|---------main area--------|
+ * but in ota scene, we do not want to change meta layout when resize
+ * we need to keep the old filesystem layout
+ * and only increase the main segment within the SIT/SSA capacity. The final layout is as follows:
+ * | sb | cp |---sit---|----nat----|-----ssa-----|-------main area-------|
  * */
 static void revert_old_fs_layout(struct f2fs_sb_info *sbi, struct f2fs_super_block *sb, struct f2fs_super_block *new_sb)
 {
+	unsigned int max_main_segments_sit, max_main_segments_ssa, max_main_segments, new_main_segments;
+	MSG(0, "Info: revert_old_fs_layout begin\n");
+	/* Keep the old filesystem layout */
 	set_newsb(sit_blkaddr, get_sb(sit_blkaddr));
 	set_newsb(segment_count_sit, get_sb(segment_count_sit));
 	set_newsb(nat_blkaddr, get_sb(nat_blkaddr));
@@ -675,18 +688,47 @@ static void revert_old_fs_layout(struct f2fs_sb_info *sbi, struct f2fs_super_blo
 	set_newsb(segment_count_ssa, get_sb(segment_count_ssa));
 	set_newsb(main_blkaddr, get_sb(main_blkaddr));
 
-	set_newsb(segment_count_main, get_newsb(segment_count -
-			(get_newsb(segment_count_ckpt) +
-			get_newsb(segment_count_sit) +
-			get_newsb(segment_count_nat) +
-			get_newsb(segment_count_ssa))));
+	/* Calculate the maximum main segments that SIT/SSA can both cover */
+	max_main_segments_sit = (get_newsb(segment_count_sit) / 2)  * c.blks_per_seg * SIT_ENTRY_PER_BLOCK;
+	max_main_segments_ssa = get_newsb(segment_count_ssa)  * c.blks_per_seg;
+	max_main_segments = (max_main_segments_sit < max_main_segments_ssa) ?
+		max_main_segments_sit : max_main_segments_ssa;
 
+	/* Calculate the new main segment count, ensuring it does not exceed the maximum main segments SIT/SSA can cover */
+	new_main_segments = get_newsb(segment_count) -
+		(get_newsb(segment_count_ckpt) +
+		get_newsb(segment_count_sit) +
+		get_newsb(segment_count_nat) +
+		get_newsb(segment_count_ssa));
+	MSG(0, "Info: max_main_segments_sit=%u, max_main_segments_ssa=%u, new_main_segments=%u\n",
+		max_main_segments_sit, max_main_segments_ssa, new_main_segments);
+	if (new_main_segments > max_main_segments) {
+		new_main_segments = max_main_segments;
+	}
+
+	set_newsb(segment_count_main, new_main_segments);
+
+	/* Calculate the new section count */
 	set_newsb(section_count, get_newsb(segment_count_main) / get_newsb(segs_per_sec));
 	set_newsb(segment_count_main, get_newsb(section_count) * get_newsb(segs_per_sec));
+
+	/* Update total segment count */
+	set_newsb(segment_count, get_newsb(segment_count_ckpt) +
+		get_newsb(segment_count_sit) +
+		get_newsb(segment_count_nat) +
+		get_newsb(segment_count_ssa) +
+		get_newsb(segment_count_main));
+
+	/* Update block count to match the new segment count */
+	set_newsb(block_count, get_newsb(segment_count) * c.blks_per_seg);
+
+	/* Keep the old checkpoint payload */
 	set_newsb(cp_payload, get_sb(cp_payload));
 
+	/* Update overprovision and reserved segments */
 	c.new_overprovision = get_best_overprovision(new_sb);
 	c.new_reserved_segments = count_overprovision(sb);
+	MSG(0, "Info: revert_old_fs_layout end\n");
 }
 
 static int f2fs_resize_grow(struct f2fs_sb_info *sbi)
@@ -706,12 +748,8 @@ static int f2fs_resize_grow(struct f2fs_sb_info *sbi)
 	if (get_new_sb(new_sb))
 		return -1;
 
-	/*
-	 * resize.f2fs not support main area to move forward, so here will reuse
-	 * f2fs filesystem layout from old sb.
-	 * */
-	if (get_newsb(main_blkaddr) < get_sb(main_blkaddr)) {
-		MSG(0, "Info: keep filesystem layout unchanged, only change main area size.\n");
+	if (get_newsb(main_blkaddr) < get_sb(main_blkaddr) ||
+		(c.meta_no_change && (get_newsb(main_blkaddr) != get_sb(main_blkaddr)))) {
 		revert_old_fs_layout(sbi, sb, new_sb);
 	}
 
