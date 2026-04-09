@@ -606,6 +606,7 @@ struct f2fs_configuration {
 	compress_config_t compress;
 	bool permissive;
 	bool record_fsync_failed;
+	bool meta_no_change;
 };
 
 #ifdef CONFIG_64BIT
