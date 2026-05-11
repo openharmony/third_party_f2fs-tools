@@ -72,6 +72,7 @@ ohos_executable("fsck.f2fs") {
   symlink_target_name = [
     "resize.f2fs",
     "sload.f2fs",
+    "f2fslabel",
   ]
 
   install_enable = true
