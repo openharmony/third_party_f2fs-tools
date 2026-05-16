@@ -371,6 +371,7 @@ void f2fs_fix_dedup_inner_list(struct f2fs_sb_info *sbi)
     if (fsck->dedup_inner_list_head == NULL) {
         return;
     }
+    TIME_TAG_POINT_WITH_END(TIME_PHASE_FIX_DEDUP);
     node = fsck->dedup_inner_list_head;
 
     node_blk = (struct f2fs_node *)calloc(BLOCK_SZ, 1);

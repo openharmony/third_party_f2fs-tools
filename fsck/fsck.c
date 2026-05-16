@@ -1043,6 +1043,7 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 		f2fs_inc_inner_actual_links(sbi, inner_ino);
 	}
 
+	TIME_TAG_POINT_START(TIME_PHASE_NODE_XATTR);
 	/* readahead xattr node block */
 	fsck_reada_node_block(sbi, i_xattr_nid);
 
@@ -1138,6 +1139,7 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 			need_fix = 1;
 		}
 	}
+	TIME_TAG_POINT_END(TIME_PHASE_NODE_XATTR);
 
 	if ((node_blk->i.i_inline & F2FS_INLINE_DATA)) {
 		unsigned int inline_size = MAX_INLINE_DATA(node_blk);
@@ -2341,6 +2343,7 @@ int fsck_chk_orphan_node(struct f2fs_sb_info *sbi)
 	if (!is_set_ckpt_flags(F2FS_CKPT(sbi), CP_ORPHAN_PRESENT_FLAG))
 		return 0;
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_CHK_ORPHAN_NODE);
 	start_blk = __start_cp_addr(sbi) + 1 + get_sb(cp_payload);
 	orphan_blkaddr = __start_sum_addr(sbi) - 1 - get_sb(cp_payload);
 
@@ -2415,6 +2418,7 @@ int fsck_chk_quota_node(struct f2fs_sb_info *sbi)
 	u32 blk_cnt = 0;
 	struct f2fs_compr_blk_cnt cbc = {0, CHEADER_PGOFS_NONE};
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_CHK_QUOTA);
 	for (qtype = 0; qtype < F2FS_MAX_QUOTAS; qtype++) {
 		cur_qtype = qtype;
 		if (sb->qf_ino[qtype] == 0)
@@ -2462,6 +2466,7 @@ int fsck_chk_quota_files(struct f2fs_sb_info *sbi)
 	if (!fsck->qctx)
 		return 0;
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_CHK_QUOTA);
 	for (qtype = 0; qtype < F2FS_MAX_QUOTAS; qtype++) {
 		ino = sb->qf_ino[qtype];
 		if (!ino)
@@ -2507,6 +2512,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 	unsigned int sit_valid_segs = 0, sit_node_blks = 0;
 	unsigned int i;
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_CHK_META);
 	/* 1. check sit usage with CP: curseg is lost? */
 	for (i = 0; i < MAIN_SEGS(sbi); i++) {
 		se = get_seg_entry(sbi, i);
@@ -3729,7 +3735,7 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 		return 0;
 
 	MSG(0, "\n");
-
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_FSCK_VERIFY);
 	if (c.zoned_model == F2FS_ZONED_HM) {
 		printf("[FSCK] Write pointers consistency                    ");
 		if (fsck->chk.wp_inconsistent_zones == 0x0) {

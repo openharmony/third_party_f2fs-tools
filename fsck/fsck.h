@@ -15,6 +15,9 @@
 #include "queue.h"
 #include "xattr.h"
 
+/* fsck_time.c */
+#include "fsck_time.h"
+
 enum {
 	FSCK_SUCCESS                 = 0,
 	FSCK_ERROR_CORRECTED         = 1 << 0,
