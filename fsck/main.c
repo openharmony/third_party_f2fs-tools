@@ -22,6 +22,7 @@
  * published by the Free Software Foundation.
  */
 #include "fsck.h"
+#include "fsck_time.h"
 #include <libgen.h>
 #include <ctype.h>
 #include <time.h>
@@ -933,8 +934,11 @@ static int do_fsck(struct f2fs_sb_info *sbi)
 		}
 	}
 	fsck_chk_orphan_node(sbi);
+
+	TIME_TAG_POINT_START(TIME_PHASE_CHK_FULL_FILE);
 	fsck_chk_node_blk(sbi, NULL, sbi->root_ino_num,
 			F2FS_FT_DIR, TYPE_INODE, &blk_cnt, &cbc, NULL);
+	TIME_TAG_POINT_END(TIME_PHASE_CHK_FULL_FILE);
 	f2fs_fix_dedup_inner_list(sbi);
 	fsck_chk_quota_files(sbi);
 
@@ -1155,6 +1159,8 @@ int main(int argc, char **argv)
 
 	f2fs_parse_options(argc, argv);
 
+	fsck_time_start_total();
+
 	if (SlogInit(c.func) < 0) {
 		/* should not exit. fsck may have no permissions for
 		 * log or splash2 partition.
@@ -1301,6 +1307,7 @@ out_err:
 
 	cost_ms = (end - start) / (1000000);
 	MSG(0, "Cost time: %llu ms\n", cost_ms);
+	report_fsck_phase(sbi);
 	DMD_CHECK_COST_TIME(sbi, cost_ms);
 
 	F2FS_EXT_EXIT();

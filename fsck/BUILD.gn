@@ -37,6 +37,7 @@ ohos_executable("fsck.f2fs") {
     "dir.c",
     "dump.c",
     "fsck.c",
+    "fsck_time.c",
     "main.c",
     "mkquota.c",
     "mount.c",

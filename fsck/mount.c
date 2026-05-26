@@ -1611,6 +1611,7 @@ static int f2fs_late_init_nid_bitmap(struct f2fs_sb_info *sbi)
 	block_t start_blk;
 	nid_t nid;
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_BUILD_NAT);
 	if (!(c.func == SLOAD || c.func == FSCK))
 		return 0;
 
@@ -2577,6 +2578,7 @@ static int late_build_segment_manager(struct f2fs_sb_info *sbi)
 	if (sbi->seg_manager_done)
 		return 1; /* this function was already called */
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_BUILD_SIT);
 	sbi->seg_manager_done = true;
 	check_sit_nat_journal(sbi);
 	if (build_sit_entries(sbi)) {
@@ -3303,6 +3305,7 @@ void build_nat_area_bitmap(struct f2fs_sb_info *sbi)
 	int ret;
 	unsigned int i;
 
+	TIME_TAG_POINT_WITH_END(TIME_PHASE_BUILD_NAT);
 	nat_block = (struct f2fs_nat_block *)calloc(BLOCK_SZ, 1);
 	ASSERT(nat_block);
 
