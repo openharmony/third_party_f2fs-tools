@@ -1261,7 +1261,8 @@ fsck_again:
 #endif
 #ifdef WITH_LABEL
 	case LABEL:
-		if (do_label(sbi))
+		ret = do_label(sbi);
+		if (ret)
 			goto out_err;
 		break;
 #endif
