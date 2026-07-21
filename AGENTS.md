@@ -4,14 +4,14 @@
 
 本 AGENTS.md 适用于仓库根目录。子目录 `include/`、`lib/`、`fsck/`、`mkfs/`、`tools/` 的 agent 规则已统一迁移至 `docs/agent-knowledge/<子目录>.md`（include.md、lib.md、fsck.md、mkfs.md、tools.md），进入对应子目录工作时应先读对应规则。
 
-本仓是 OpenHarmony third_party/f2fs-tools，基于上游 f2fs-tools v1.16.0，提供 F2FS 文件系统格式化、检查修复、调试和运维工具。新增 DMD、DFX 日志、去重检查、时间统计、预读队列、额外 fsck 标志等 OH 独有特性，用于设备启动安全校验、故障诊断上报和性能分析。最重要的架构边界：libf2fs 共享库是公共 API 起点，fsck/mkfs/tools 依赖它——新增公共 API 必先改 lib 再改使用方。
+本仓是 OpenHarmony third_party/f2fs-tools，基于上游 f2fs-tools v1.16.0，提供 F2FS 文件系统格式化、检查修复、调试和运维工具。新增 DMD、DFX 日志、去重检查、时间统计、预读队列、额外 fsck 标志等 OH 扩展特性，用于设备启动安全校验、故障诊断上报和性能分析。最重要的架构边界：libf2fs 共享库是公共 API 起点，fsck/mkfs/tools 依赖它——新增公共 API 必先改 lib 再改使用方。
 
 Key areas:
 - `include/`: 公共头文件，DMD/日志/错误码定义，API 兼容性敏感
 - `lib/`: libf2fs 共享库实现，DMD/日志/额外标志，公共 API 变更必经路径
 - `fsck/`: fsck.f2fs 核心，去重/时间统计/预读队列，高频修改
 - `mkfs/`: mkfs.f2fs 格式化，低频但影响启动安全
-- `tools/`: 辅助工具和独有 debug_tools
+- `tools/`: 辅助工具和 debug_tools
 
 Where to look:
 - fsck 检查修复变更 → `fsck/`，`docs/agent-knowledge/fsck.md`
@@ -21,7 +21,7 @@ Where to look:
 - 辅助工具变更 → `tools/`，`docs/agent-knowledge/tools.md`
 - 构建配置变更 → `BUILD.gn`、`bundle.json`
 - 全仓架构理解 → `docs/agent-knowledge/logical-view.md`
-- OH 独有特性场景 → `docs/agent-knowledge/scenario-view.md`
+- OH 扩展特性场景 → `docs/agent-knowledge/scenario-view.md`
 
 # Knowledge routing
 
@@ -29,7 +29,7 @@ Before planning or editing, classify the task and read the matching documents.
 
 ### Task-based routing
 - 全仓架构或模块边界变更 → `docs/agent-knowledge/logical-view.md`，再读相关子目录规则（`docs/agent-knowledge/<子目录>.md`）
-- OH 独有特性（DMD/去重/时间统计/额外标志）变更 → `docs/agent-knowledge/scenario-view.md`
+- OH 扩展特性（DMD/去重/时间统计/额外标志）变更 → `docs/agent-knowledge/scenario-view.md`
 - 编译或条件编译相关 → `docs/agent-knowledge/build-and-test.md`
 - DMD 上报或错误码 → `docs/agent-knowledge/include.md`、`docs/agent-knowledge/lib.md`
 - 日志系统 → `docs/agent-knowledge/include.md`、`docs/agent-knowledge/lib.md`
@@ -85,7 +85,7 @@ In the plan, state:
 - fsck.f2fs/mkfs.f2fs 安装到 system 和 updater，辅助工具只安装到 system
 
 ### Do not
-- 不要使用裸 strcpy/sprintf，独有代码必须用 securec.h 安全函数（strncpy_s、vsnprintf_s、memset_s）
+- 不要使用裸 strcpy/sprintf，扩展代码必须用 securec.h 安全函数（strncpy_s、vsnprintf_s、memset_s）
 - 不要顺手大重构；变更范围要小：接口+实现+BUILD+测试成组修改
 - 不要混入无关格式化
 - 不要绕过 CONF_TARGET_HOST 条件编译隔离；新增设备端特性必须同时提供空实现

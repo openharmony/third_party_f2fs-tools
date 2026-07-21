@@ -6,7 +6,7 @@
 
 | 路径 | 作用 |
 | --- | --- |
-| `BUILD.gn` | 构建 `mkfs.f2fs`，依赖 `libf2fs` 和 `e2fsprogs:libext2_uuid`、`e2fsprogs:libdacconfig`。 |
+| `BUILD.gn` | 构建 `mkfs.f2fs`（含 `../lib/extra_fsck.c`），依赖 `libf2fs` 和 `e2fsprogs:libext2_uuid`、`e2fsprogs:libdacconfig`。 |
 | `f2fs_format_main.c` | 入口：解析参数、调用格式化、处理返回值。 |
 | `f2fs_format.c` | 格式化逻辑：配置 superblock、checkpoint、NAT、SIT、SSA、main area、root inode。包含 `ohos` 标记注释。 |
 | `f2fs_format_utils.c` | 工具函数：写入各区域、初始化 block。 |

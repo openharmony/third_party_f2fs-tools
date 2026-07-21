@@ -1,23 +1,22 @@
 # include Agent Notes
 
-`include/` 是公共头文件层。独有头文件集中在 DMD、日志、扩展宏和错误码定义。
+`include/` 是公共头文件层。扩展头文件集中在 DMD、日志、扩展宏和错误码定义。
 
 ## 目录结构
 
 | 路径 | 作用 |
 | --- | --- |
-| `f2fs_fs.h` | 核心数据结构定义：superblock、checkpoint、node、inode、sit、nat、summary 等。包含 `DMD_ASSERT_MSG` 宏定义。 |
-| `f2fs_dmd.h` | 【独有】DMD 上报结构 `DmdReport`、`DmdMsg`、`DmdFault`；错误位图操作宏 `DMD_SET_VALUE`、`DMD_ADD_ERROR`、`DMD_CHECK_COST_TIME`。 |
-| `f2fs_dmd_errno.h` | 【独有】DMD 错误码定义：`PR_INVALID_SUPER_BLOCK` 到 `PR_FSCK_TIME_OVERCOST`，共 80+ 错误类型。 |
-| `f2fs_dmd_cfg.h` | 【独有】DMD 配置宏：`DMD_ERR`、`DMD_OK`。 |
-| `f2fs_dfx_common.h` | 【独有】DFX 通用定义：`LogType` 枚举（FSCK/DUMP/DEFRAG/RESIZE/MKFS）、`UNUSED` 宏。 |
-| `f2fs_log.h` | 【独有】日志系统：`LogInfo` 结构、`KLOGE`/`KLOGI`/`SLOG` 宏、日志级别定义。 |
-| `f2fs_ext.h` | 【独有】扩展宏：`F2FS_EXT_EXIT()` 组合 `SlogExit()` 和 `DmdReport()`。 |
-| `f2fs_ext.h` | 【独有】扩展头文件，聚合日志和 DMD 头文件，定义 `F2FS_EXT_EXIT()` 宏。 |
+| `f2fs_fs.h` | 核心数据结构定义：superblock、checkpoint、node、inode、sit、nat、summary 等。使用 `DMD_ASSERT_MSG` 宏。 |
+| `f2fs_dmd.h` | DMD 上报结构 `DmdReport`、`DmdMsg`、`DmdFault`；错误位图操作宏 `DMD_SET_VALUE`、`DMD_ADD_ERROR`、`DMD_CHECK_COST_TIME`。 |
+| `f2fs_dmd_errno.h` | DMD 错误码定义：`PR_INVALID_SUPER_BLOCK` 到 `PR_FSCK_TIME_OVERCOST`，共 80+ 错误类型。 |
+| `f2fs_dmd_cfg.h` | DMD 配置宏：`DMD_ERR`、`DMD_OK`。 |
+| `f2fs_dfx_common.h` | DFX 通用定义：`LogType` 枚举（FSCK/DUMP/DEFRAG/RESIZE/MKFS）、`UNUSED` 宏。 |
+| `f2fs_log.h` | 日志系统：`LogInfo` 结构、`KLOGE`/`KLOGI`/`SLOG` 宏、日志级别定义。 |
+| `f2fs_ext.h` | 扩展头文件，聚合 `f2fs_log.h` 和 `f2fs_dmd.h`，定义 `F2FS_EXT_EXIT()` 宏（组合 `SlogExit()` 和 `DmdReport()`）。 |
 | `quota.h` | quota 结构定义。 |
 | `android_config.h` | Android 环境兼容配置。 |
 
-## 独有头文件详解
+## 扩展头文件详解
 
 ### f2fs_dmd.h
 

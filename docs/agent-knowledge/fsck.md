@@ -1,6 +1,6 @@
 # fsck Agent Notes
 
-`fsck/` 是 fsck.f2fs 核心实现，提供 F2FS 文件系统检查修复能力。独有模块包括时间统计、去重检查、异步预读队列。
+`fsck/` 是 fsck.f2fs 核心实现，提供 F2FS 文件系统检查修复能力。扩展模块包括时间统计、去重检查、异步预读队列。
 
 ## 知识路由
 
@@ -9,37 +9,37 @@
 | fsck 检查修复、关键函数、数据结构 | 本文档 `fsck 检查修复流程` |
 | resize 扩容缩容、safe resize | 本文档 `resize 扩容缩容流程` |
 | dedup 去重机制、检查修复流程 | 本文档 `dedup 去重检查修复` |
-| 时间统计实现 | 本文档 `独有实现 > fsck_time.c/h` |
-| 异步预读队列实现 | 本文档 `独有实现 > queue.c/h` |
+| 时间统计实现 | 本文档 `扩展实现 > fsck_time.c/h` |
+| 异步预读队列实现 | 本文档 `扩展实现 > queue.c/h` |
 
 ## 目录结构
 
 | 路径 | 作用 |
 | --- | --- |
-| `BUILD.gn` | 构建 `fsck.f2fs` 及 symlink，含独有源文件 |
+| `BUILD.gn` | 构建 `fsck.f2fs` 及 symlink，含扩展源文件 |
 | `main.c` | 入口：`main()` 解析参数、调用 fsck、`SlogInit`/`SlogExit`/`DmdReport` |
 | `fsck.c` | 核心检查：`fsck_chk_meta`、`fsck_chk_node_blk`、`fsck_chk_data_blk`、`fsck_chk_dentry_blk`、`fsck_verify` |
 | `fsck.h` | 结构定义：`f2fs_fsck`、`child_info`（含去重标记）、`hard_link_node`、`dedup_inner_node` |
 | `mount.c` | 挂载：`f2fs_do_mount`、`f2fs_do_umount`、NAT/SIT 构建、DMD 字段设置 |
-| `fsck_time.c` | 【独有】时间统计 |
-| `fsck_time.h` | 【独有】`fsck_time_phase` 枚举、`TIME_TAG_POINT_START/END/WITH_END` 宏 |
-| `dedup.c` | 【独有】去重检查 |
-| `dedup.h` | 【独有】去重标志位 `F2FS_DEDUPED_FL` 等、`dedup_inner_node` 结构 |
-| `queue.c` | 【独有】异步预读队列 |
-| `queue.h` | 【独有】`ra_work` 结构、sum cache 结构 |
+| `fsck_time.c` | 时间统计 |
+| `fsck_time.h` | `fsck_time_phase` 枚举、`TIME_TAG_POINT_START/END/WITH_END` 宏 |
+| `dedup.c` | 去重检查 |
+| `dedup.h` | 去重标志位 `F2FS_DEDUPED_FL` 等、`dedup_inner_node` 结构 |
+| `queue.c` | 异步预读队列 |
+| `queue.h` | `ra_work` 结构、sum cache 结构 |
 | `node.c`/`node.h` | node 块处理 |
 | `dir.c` | 目录项处理 |
 | `xattr.c`/`xattr.h` | 扩展属性处理 |
 | `segment.c` | segment 管理 |
 | `dump.c` | NAT/SIT/SSA dump |
 | `defrag.c` | 碎片整理 |
-| `resize.c` | 文系统大小调整，入口 `f2fs_resize()`，扩容 `f2fs_resize_grow()`，缩容 `f2fs_resize_shrink()`，safe resize `revert_old_fs_layout()` |
+| `resize.c` | 文件系统大小调整，入口 `f2fs_resize()`，扩容 `f2fs_resize_grow()`，缩容 `f2fs_resize_shrink()`，safe resize `revert_old_fs_layout()` |
 | `sload.c` | 加载文件到文件系统 |
 | `compress.c`/`compress.h` | 压缩块检查 |
 | `dict.c`/`dict.h` | 字典数据结构 |
 | quota 相关文件 | quota 处理 |
 
-## 独有实现
+## 扩展实现
 
 ### fsck_time.c/h
 
@@ -70,13 +70,14 @@ main()
   -> f2fs_do_mount()              // 挂载、构建元数据
   -> do_fsck()
     -> fsck_init()                // 初始化 bitmap
-    -> fsck_chk_meta()            // 元数据检查（含 checkpoint）
+    -> fsck_chk_checkpoint()      // checkpoint 检查
     -> fsck_chk_quota_node()
     -> fsck_chk_orphan_node()
     -> fsck_chk_node_blk()        // 从 root inode 递归检查
-    -> f2fs_fix_dedup_inner_list()// 去重修复（独有）
+    -> f2fs_fix_dedup_inner_list()// 去重修复（扩展）
+    -> fsck_chk_quota_files()
     -> fsck_verify()              // 一致性验证
-  -> DmdReport()                  // DMD 上报（独有）
+  -> F2FS_EXT_EXIT()              // SlogExit + DMD 上报（扩展）
 ```
 
 ### 递归检查
@@ -96,7 +97,7 @@ fsck_chk_node_blk()
 - valid_block/node/inode count 与 CP 对齐
 
 ### 修复阶段
-硬链接 i_links、NAT entries、checkpoint、checksum；独有：清除额外 fsck 标志（`ClearExtraFlag`）。
+硬链接 i_links、NAT entries、checkpoint、checksum；扩展：清除额外 fsck 标志（`ClearExtraFlag`）。
 
 ## resize 扩容缩容流程
 
@@ -122,7 +123,7 @@ f2fs_resize()
 | --- | --- |
 | `get_new_sb()` | 按目标大小计算新 superblock 参数 |
 | `f2fs_resize_check()` | 检查 resize 合法性（valid_block_count、main area 空间） |
-| `revert_old_fs_layout()` | 独有：保持 SIT/NAT/SSA 地址不变，仅扩展 main segment |
+| `revert_old_fs_layout()` | 扩展：保持 SIT/NAT/SSA 地址不变，仅扩展 main segment |
 | `rebuild_checkpoint()` | 重建 checkpoint，递增版本号 |
 | `f2fs_defragment()` | 迁移超出边界的数据块 |
 
@@ -164,13 +165,13 @@ f2fs_fix_dedup_inner_list()
   -> links!=actual_links: 修复 i_links   // 修复链接计数
 ```
 
-关键函数：`f2fs_is_deduped_inode`、`f2fs_is_inner_inode`、`f2fs_is_out_inode`、`f2fs_sanity_check_dedup_inner_nid`、`f2fs_inc_inner_actual_links`、`check_dedup_data_blkaddr`、`f2fs_fix_dedup_inner_list`、`drop_node_blk`。
+关键函数：`f2fs_is_deduped_inode`、`f2fs_is_inner_inode`、`f2fs_is_out_inode`、`f2fs_sanity_check_dedup_inner_nid`、`f2fs_inc_inner_actual_links`、`check_dedup_data_blkaddr`、`f2fs_fix_dedup_inner_list`。
 
 约束：新增去重检查逻辑须在 `dedup.c`；修复时须正确处理 `actual_links`；删除内部 inode 须递归删除所有数据块。
 
 ## 修改约束
 
-- 独有源文件必须在 `BUILD.gn` 中包含
+- 扩展源文件必须在 `BUILD.gn` 中包含
 - 时间统计修改要同步更新 `fsck_time_phase` 枚举和名称表
 - 去重检查修改要同步 `dedup_inner_list_head` 链表和 `f2fs_fsck` 结构
 - 预读队列修改要检查 `POSIX_FADV_WILLNEED` 条件编译

@@ -1,6 +1,6 @@
 # lib Agent Notes
 
-`lib/` 是 libf2fs 共享库，提供 F2FS 工具的核心功能。独有实现包括日志、DMD 上报和额外 fsck 标志。
+`lib/` 是 libf2fs 共享库，提供 F2FS 工具的核心功能。扩展实现包括日志、DMD 上报和额外 fsck 标志。
 
 ## 目录结构
 
@@ -10,14 +10,14 @@
 | `libf2fs.c` | 核心库函数：初始化、校验、bitmap 操作、segment 管理。包含 `WITH_OHOS` 条件编译分支。 |
 | `libf2fs_io.c` | 设备 IO 操作：read、write、readahead、fsync、discard、zoned 设备 IO。 |
 | `libf2fs_zoned.c` | zoned 设备支持：zone 报告、zone 重置、写指针管理。 |
-| `libf2fs_log.c` | 【独有】日志系统实现：SlogInit、SlogWrite、KlogWrite、日志文件管理、大小控制、时间戳写入。 |
-| `libf2fs_dmd.c` | 【独有】DMD 上报实现：DmdReport、DmdInsertError、DmdCheckCostTime、错误位图操作、HVB 状态读取。 |
-| `extra_fsck.c` | 【独有】额外 fsck 标志：CheckExtraFlag、ClearExtraFlag，读取和清除 CP segment 最后一块的 needFsck 标志。 |
-| `extra_fsck.h` | 【独有】额外 fsck 标志头文件：定义 `ExtraFlagsBlock` 结构和 `EXTRA_NEED_FSCK_FLAG`。 |
+| `libf2fs_log.c` | 日志系统实现：SlogInit、SlogWrite、KlogWrite、日志文件管理、大小控制、时间戳写入。 |
+| `libf2fs_dmd.c` | DMD 上报实现：DmdReport、DmdInsertError、DmdCheckCostTime、错误位图操作、HVB 状态读取。 |
+| `extra_fsck.c` | 额外 fsck 标志：CheckExtraFlag、ClearExtraFlag，读取和清除 CP segment 最后一块的 needFsck 标志。 |
+| `extra_fsck.h` | 额外 fsck 标志头文件：定义 `ExtraFlagsBlock` 结构和 `EXTRA_NEED_FSCK_FLAG`。 |
 | `nls_utf8.c` | UTF8 NLS（National Language Support）实现。 |
 | `utf8data.h` | UTF8 数据表（大文件，330KB）。 |
 
-## 独有实现详解
+## 扩展实现详解
 
 ### libf2fs_log.c
 
@@ -25,7 +25,7 @@
 
 核心流程：
 - `SlogInit(funcType)`：按功能类型（FSCK/DUMP/DEFRAG/RESIZE）选择日志文件名，创建 `/log/f2fs-tools/` 或 `/dev/f2fs-tools/` 目录，打开日志文件，写入时间戳头。
-- `SlogWrite(fmt, ...)`：格式化日志内容，检查文件大小（256KB 限制），必要时 rename 为 `.1 备份，写入日志。
+- `SlogWrite(fmt, ...)`：格式化日志内容，检查文件大小（256KB 限制），必要时 rename 为 .1 备份，写入日志。
 - `KlogWrite(level, fmt, ...)`：写入 `/dev/kmsg`，内核日志级别过滤。
 - `SlogExit()`：fsync、ftruncate、关闭文件、释放内存。
 

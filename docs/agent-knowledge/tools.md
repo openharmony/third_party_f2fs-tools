@@ -1,22 +1,21 @@
 # tools Agent Notes
 
-`tools/` 提供辅助工具：加密、状态统计、块映射、IO 操作、调试辅助。独有模块包括 `debug_tools/` 和 `f2fs_tools/`。
+`tools/` 提供辅助工具：加密、块映射、IO 操作、调试辅助。模块包括 `debug_tools/` 和 `f2fs_tools/`。
 
 ## 目录结构
 
 | 路径 | 作用 |
 | --- | --- |
-| `BUILD.gn` | 构建 `f2fscrypt`、`f2fstat`、`fibmap.f2fs`。 |
+| `BUILD.gn` | 构建 `f2fscrypt`、`fibmap.f2fs`。 |
 | `f2fscrypt.c` | 加密工具：F2FS 文件加密配置。 |
 | `sha512.c` | SHA512 实现（用于加密密钥）。 |
-| `f2fstat.c` | 状态统计工具：F2FS 文件系统状态输出。 |
 | `fibmap.c` | 块映射工具：文件块地址映射查询。 |
 | `f2fs_io_parse.c` | IO 解析辅助。 |
 | `f2fs_io/` | IO 操作工具：f2fs_io 命令实现。 |
-| `f2fs_tools/` | 【独有】工具公共头文件：`f2fs_tools.h` 定义压缩算法枚举。 |
-| `debug_tools/` | 【独有】调试辅助：`fsck_debug.c` 提供 dump_sbi_info、hex_info_dump、dump_bitmap_diff。 |
+| `f2fs_tools/` | 工具公共代码：`f2fs_tools.h`（压缩算法枚举）、`f2fs_tools.c`（`f2fs_enable_large_nat_bitmap()`）。 |
+| `debug_tools/` | 调试辅助：`fsck_debug.c` 提供 dump_sbi_info、hex_info_dump、dump_bitmap_diff。 |
 
-## 独有实现详解
+## 实现详解
 
 ### f2fs_tools/f2fs_tools.h
 
@@ -50,7 +49,7 @@ enum compress_algorithm_type {
 
 ## 修改约束
 
-- f2fscrypt、f2fstat、fibmap.f2fs 只安装到 `system` 镜像。
+- f2fscrypt、fibmap.f2fs 只安装到 `system` 镜像。
 - 新增调试工具要同步 `fsck/BUILD.gn`（fsck 编译时包含 `debug_tools/fsck_debug.c`）。
 - f2fs_tools.h 定义公共类型，修改要检查使用方。
 - 新增源文件要同步 `BUILD.gn`。

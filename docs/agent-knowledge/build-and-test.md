@@ -12,7 +12,6 @@
 | `//third_party/f2fs-tools/fsck:fsck.f2fs` | 构建 fsck.f2fs 及 symlink。 |
 | `//third_party/f2fs-tools/mkfs:mkfs.f2fs` | 构建 mkfs.f2fs。 |
 | `//third_party/f2fs-tools/tools:f2fscrypt` | 构建加密工具。 |
-| `//third_party/f2fs-tools/tools:f2fstat` | 构建状态统计工具。 |
 | `//third_party/f2fs-tools/tools:fibmap.f2fs` | 构建块映射工具。 |
 
 ## 示例命令
@@ -45,7 +44,7 @@
 | 工具 | 安装镜像 |
 | --- | --- |
 | fsck.f2fs、mkfs.f2fs | `system`、`updater` |
-| f2fscrypt、f2fstat、fibmap.f2fs | `system` |
+| f2fscrypt、fibmap.f2fs | `system` |
 
 ## 传统 autotools 构建（非主路径）
 
