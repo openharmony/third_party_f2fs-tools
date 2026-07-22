@@ -17,6 +17,7 @@ config("f2fs-defaults") {
 ###################################################
 ##Build f2fscrypt
 ohos_executable("f2fscrypt") {
+  branch_protector_ret = "pac_ret"
   configs = [ ":f2fs-defaults" ]
   sources = [
     "f2fscrypt.c",
@@ -40,6 +41,7 @@ ohos_executable("f2fscrypt") {
 ###################################################
 ##Build f2fstat
 ohos_executable("f2fstat") {
+  branch_protector_ret = "pac_ret"
   configs = [ ":f2fs-defaults" ]
   sources = [ "f2fstat.c" ]
 
@@ -61,6 +63,7 @@ ohos_executable("f2fstat") {
 ###################################################
 ##Build fibmap.f2fs
 ohos_executable("fibmap.f2fs") {
+  branch_protector_ret = "pac_ret"
   configs = [ ":f2fs-defaults" ]
   sources = [ "fibmap.c" ]
 

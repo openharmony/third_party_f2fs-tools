@@ -21,6 +21,7 @@ config("f2fs-defaults") {
 ###################################################
 ##Build mkfs.f2fs
 ohos_executable("mkfs.f2fs") {
+  branch_protector_ret = "pac_ret"
   configs = [ ":f2fs-defaults" ]
   sources = [
     "../lib/extra_fsck.c",
