@@ -25,6 +25,7 @@ config("f2fs-defaults") {
 ###################################################
 ##Build fsck
 ohos_executable("fsck.f2fs") {
+  branch_protector_ret = "pac_ret"
   configs = [ ":f2fs-defaults" ]
   sources = [
     "../lib/extra_fsck.c",

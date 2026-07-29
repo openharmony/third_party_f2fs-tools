@@ -28,6 +28,7 @@ config("libf2fs-headers") {
 }
 
 ohos_shared_library("libf2fs") {
+  branch_protector_ret = "pac_ret"
   sources = [
     "libf2fs.c",
     "libf2fs_io.c",
