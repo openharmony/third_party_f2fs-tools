@@ -406,6 +406,40 @@ err:
 	return -1;
 }
 
+static int is_node_blk_all_zero(struct f2fs_node *node_blk)
+{
+	unsigned char *p = (unsigned char *)node_blk;
+	int i;
+
+	for (i = 0; i < BLOCK_SZ; i++) {
+		if (p[i]) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static void sanity_print_nat_inode(struct f2fs_node *node_blk, u32 nid,
+		struct node_info *ni)
+{
+	ASSERT_MSG("nid[0x%x] nat_entry->ino[0x%x] node_blk_addr[0x%x] nat_ver[0x%x] "
+			"footer.nid[0x%x] footer.ino[0x%x] footer.flag[0x%x] "
+			"footer.cp_ver[0x%"PRIx64"] footer.next_blkaddr[0x%x] "
+			"i_size[0x%"PRIx64"] i_blocks[0x%"PRIx64"] "
+			"i_atime[0x%"PRIx64"] i_ctime[0x%"PRIx64"] i_mtime[0x%"PRIx64"]",
+			nid, ni->ino, ni->blk_addr, ni->version,
+			le32_to_cpu(node_blk->footer.nid),
+			le32_to_cpu(node_blk->footer.ino),
+			le32_to_cpu(node_blk->footer.flag),
+			le64_to_cpu(node_blk->footer.cp_ver),
+			le32_to_cpu(node_blk->footer.next_blkaddr),
+			le64_to_cpu(node_blk->i.i_size),
+			le64_to_cpu(node_blk->i.i_blocks),
+			le64_to_cpu(node_blk->i.i_atime),
+			le64_to_cpu(node_blk->i.i_ctime),
+			le64_to_cpu(node_blk->i.i_mtime));
+}
+
 int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 			struct f2fs_node *node_blk,
 			enum FILE_TYPE ftype, enum NODE_TYPE ntype,
@@ -460,18 +494,32 @@ int sanity_check_nid(struct f2fs_sb_info *sbi, u32 nid,
 		return 0;
 	}
 
+	if (ntype == TYPE_INODE && node_blk->footer.nid == 0 &&
+			node_blk->footer.ino == 0) {
+		if (is_node_blk_all_zero(node_blk)) {
+			DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NODE_INO_NOT_EQUAL_FOOTER_INO);
+			ASSERT_MSG("nid[0x%x] nat_entry->ino[0x%x] node_blk_addr[0x%x] nat_ver[0x%x] "
+					"node block is all zeros (4K empty)",
+					nid, ni->ino, ni->blk_addr, ni->version);
+			return -EINVAL;
+		}
+	}
+
 	if (ntype == TYPE_INODE &&
 			node_blk->footer.nid != node_blk->footer.ino) {
 		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_INODE_FOOTER_INO_NOT_EQUAL_NID);
-		ASSERT_MSG("nid[0x%x] footer.nid[0x%x] footer.ino[0x%x]",
-				nid, le32_to_cpu(node_blk->footer.nid),
-				le32_to_cpu(node_blk->footer.ino));
+		sanity_print_nat_inode(node_blk, nid, ni);
 		return -EINVAL;
 	}
 	if (ni->ino != le32_to_cpu(node_blk->footer.ino)) {
 		DMD_ADD_ERROR(LOG_TYP_FSCK, PR_NODE_INO_NOT_EQUAL_FOOTER_INO);
-		ASSERT_MSG("nid[0x%x] nat_entry->ino[0x%x] footer.ino[0x%x]",
-				nid, ni->ino, le32_to_cpu(node_blk->footer.ino));
+		if (ntype == TYPE_INODE) {
+			sanity_print_nat_inode(node_blk, nid, ni);
+		} else {
+			ASSERT_MSG("nid[0x%x] nat_entry->ino[0x%x] node_blk_addr[0x%x] nat_ver[0x%x] "
+					"footer.ino[0x%x]",
+					nid, ni->ino, ni->blk_addr, ni->version, le32_to_cpu(node_blk->footer.ino));
+		}
 		return -EINVAL;
 	}
 	if (ntype != TYPE_INODE &&
