@@ -44,5 +44,6 @@ inline bool is_need_check_dedup_nid(struct child_info *child)
 	return child && child->is_dedup_out_inode && !child->is_unstable_inode;
 }
 
-bool check_dedup_data_blkaddr(struct f2fs_node *node_blk, block_t blkaddr, int *need_fix, int idx);
+bool check_dedup_data_blkaddr(struct f2fs_node *node_blk, block_t blkaddr, int *need_fix, int idx,
+	bool is_unstable_dedup_inode);
 #endif /* _DEDUP_H_ */

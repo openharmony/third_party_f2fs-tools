@@ -1283,7 +1283,8 @@ void fsck_chk_inode_blk(struct f2fs_sb_info *sbi, u32 nid,
 
 		if (dedup_supported && child.is_dedup_out_inode && 
 			!chk_and_update_verity_blk_reached(&child)) {
-			if (check_dedup_data_blkaddr(node_blk, blkaddr, &need_fix, ofs + idx)) {
+			if (check_dedup_data_blkaddr(node_blk, blkaddr, &need_fix, ofs + idx,
+					child.is_unstable_inode)) {
 				continue;
 			}
 		}
@@ -1399,7 +1400,7 @@ skip:
 
 check:
 	if (dedup_supported && f2fs_is_out_inode(node_blk) &&
-			!f2fs_is_revoke_inode(node_blk)) {
+			!f2fs_is_unstable_dedup_inode(node_blk)) {
 		f2fs_check_dedup_extent_info(&child);
 	} else {
 		/* check uncovered range in the back of extent */
@@ -1611,7 +1612,8 @@ int fsck_chk_dnode_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 
 		if (dedup_supported && child->is_dedup_out_inode && 
 			!chk_and_update_verity_blk_reached(child)) {
-			if (check_dedup_data_blkaddr(node_blk, blkaddr, &need_fix, idx)) {
+			if (check_dedup_data_blkaddr(node_blk, blkaddr, &need_fix, idx,
+					child->is_unstable_inode)) {
 				continue;
 			}
 		}

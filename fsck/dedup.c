@@ -415,14 +415,15 @@ void f2fs_check_dedup_extent_info(struct child_info *child)
 	child->state |= FSCK_UNMATCHED_EXTENT;
 }
 
-bool check_dedup_data_blkaddr(struct f2fs_node *node_blk, block_t blkaddr, int *need_fix, int idx)
+bool check_dedup_data_blkaddr(struct f2fs_node *node_blk, block_t blkaddr, int *need_fix, int idx,
+	bool is_unstable_dedup_inode)
 {
 	block_t expect_blkaddr = IS_INODE(node_blk) ? DEDUP_ADDR : NULL_ADDR;
 
-	if (f2fs_is_unstable_dedup_inode(node_blk) && blkaddr == expect_blkaddr) {
+	if (is_unstable_dedup_inode && blkaddr == expect_blkaddr) {
 		return true;
 	}
-	if (!f2fs_is_unstable_dedup_inode(node_blk)) {
+	if (!is_unstable_dedup_inode) {
 		if (blkaddr == expect_blkaddr) {
 			return true;
 		}
