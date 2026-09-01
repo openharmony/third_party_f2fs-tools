@@ -37,6 +37,7 @@ ohos_shared_library("libf2fs") {
     "libf2fs_log.c",
     "libf2fs_dmd.c"
   ]
+  version_script = "libf2fs.map"
 
   include_dirs = [ "." ]
 
