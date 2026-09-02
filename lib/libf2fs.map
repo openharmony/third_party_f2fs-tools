@@ -1,114 +1,95 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
-/*
- * Version script for libf2fs.so (OpenHarmony GN build, see lib/BUILD.gn).
- *
- * libf2fs.so is built from: lib/libf2fs.c, lib/libf2fs_io.c,
- * lib/libf2fs_zoned.c, lib/nls_utf8.c, lib/libf2fs_log.c,
- * lib/libf2fs_dmd.c. (lib/extra_fsck.c is NOT part of the .so; it is
- * compiled directly into the fsck/mkfs executables.)
- *
- * The export set below contains every non-static symbol that is either
- * declared in a header (include/*.h, lib/*.h, fsck/*.h, tools/*.h) or
- * referenced by the consumers that link this .so (fsck.f2fs, mkfs.f2fs,
- * fibmap.f2fs and their directly-compiled sources). Symbols used only
- * internally within the .so are hidden via "local: *;". Hiding a symbol
- * only removes it from the dynamic symbol table; internal references
- * within the .so still resolve, and static helpers are already local.
- *
- * To take effect, reference this file from the
- * ohos_shared_library("libf2fs") target in lib/BUILD.gn:
- *
- *     version_script = "libf2fs.map"
- *
- * NOTE: when a new public symbol is added, list it here too, otherwise
- * it will be hidden and become an ABI break for external consumers.
- */
+# Copyright (c) 2026 Huawei Device Co., Ltd.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
 
-F2FS_TOOLS_1.0 {
-	global:
-		/* lib/libf2fs.c */
-		utf8_to_utf16;
-		utf16_to_utf8;
-		log_base_2;
-		get_bits_in_byte;
-		test_and_set_bit_le;
-		test_and_clear_bit_le;
-		test_bit_le;
-		f2fs_test_bit;
-		f2fs_set_bit;
-		f2fs_clear_bit;
-		find_next_bit_le;
-		find_next_zero_bit_le;
-		f2fs_dentry_hash;
-		addrs_per_inode;
-		addrs_per_block;
-		f2fs_max_file_offset;
-		f2fs_cal_crc32;
-		f2fs_crc_valid;
-		f2fs_inode_chksum;
-		f2fs_checkpoint_chksum;
-		write_inode;
-		f2fs_init_configuration;
-		f2fs_dev_is_writable;
-		f2fs_dev_is_umounted;
-		f2fs_devs_are_umounted;
-		get_kernel_version;
-		get_kernel_uname_version;
-		get_device_info;
-		f2fs_get_device_info;
-		f2fs_get_f2fs_info;
-		calc_extra_isize;
-		f2fs_str2encoding;
-		f2fs_encoding2str;
-		f2fs_get_encoding_flags;
-		f2fs_str2encoding_flags;
+{
+global:
+    # f2fs_fs.h - Public API
+    utf8_to_utf16;
+    utf16_to_utf8;
+    log_base_2;
+    get_bits_in_byte;
+    test_and_set_bit_le;
+    test_and_clear_bit_le;
+    test_bit_le;
+    f2fs_test_bit;
+    f2fs_set_bit;
+    f2fs_clear_bit;
+    find_next_bit_le;
+    find_next_zero_bit_le;
+    f2fs_dentry_hash;
+    addrs_per_inode;
+    addrs_per_block;
+    f2fs_max_file_offset;
+    f2fs_cal_crc32;
+    f2fs_crc_valid;
+    f2fs_inode_chksum;
+    f2fs_checkpoint_chksum;
+    write_inode;
+    f2fs_init_configuration;
+    f2fs_dev_is_writable;
+    f2fs_dev_is_umounted;
+    f2fs_devs_are_umounted;
+    get_kernel_version;
+    get_kernel_uname_version;
+    get_device_info;
+    f2fs_get_device_info;
+    f2fs_get_f2fs_info;
+    calc_extra_isize;
+    f2fs_str2encoding;
+    f2fs_encoding2str;
+    f2fs_get_encoding_flags;
+    f2fs_str2encoding_flags;
+    f2fs_load_nls_table;
+    dcache_init;
+    dcache_release;
+    dev_read;
+    dev_readahead;
+    dev_write;
+    dev_write_block;
+    dev_write_dump;
+    dev_fill;
+    dev_fill_block;
+    dev_read_block;
+    dev_reada_block;
+    dev_read_version;
+    f2fs_fsync_device;
+    f2fs_init_sparse_file;
+    f2fs_release_sparse_resource;
+    f2fs_finalize_device;
+    f2fs_get_zoned_model;
+    f2fs_get_zone_blocks;
+    f2fs_report_zone;
+    f2fs_report_zones;
+    f2fs_check_zones;
+    f2fs_reset_zone;
+    f2fs_reset_zones;
+    f2fs_get_usable_segments;
 
-		/* lib/libf2fs_io.c */
-		dcache_release;
-		dcache_init;
-		dev_read_version;
-		dev_read;
-		dev_readahead;
-		dev_write;
-		dev_write_block;
-		dev_write_dump;
-		dev_fill;
-		dev_fill_block;
-		dev_read_block;
-		dev_reada_block;
-		f2fs_fsync_device;
-		f2fs_init_sparse_file;
-		f2fs_release_sparse_resource;
-		f2fs_finalize_device;
-		c;
-		f2fs_sparse_file;
+    # f2fs_log.h - Public API
+    SlogInit;
+    SlogExit;
+    SlogWrite;
+    KlogWrite;
 
-		/* lib/libf2fs_zoned.c */
-		f2fs_get_zoned_model;
-		f2fs_get_zone_blocks;
-		f2fs_report_zone;
-		f2fs_report_zones;
-		f2fs_check_zones;
-		f2fs_reset_zone;
-		f2fs_reset_zones;
-		f2fs_get_usable_segments;
+    # f2fs_dmd.h - Public API
+    DmdReport;
+    DmdInsertError;
+    PrintToMsg;
+    DmdCheckCostTime;
 
-		/* lib/nls_utf8.c */
-		f2fs_load_nls_table;
+    # f2fs_dmd.h - Public extern variables
+    g_assertMsg;
+    g_logI;
+    g_logTag;
+    g_reportMsg;
 
-		/* lib/libf2fs_log.c */
-		KlogWrite;
-		SlogInit;
-		SlogExit;
-		SlogWrite;
+    # Public extern variables
+    c;
+    g_dmdReport;
 
-		/* lib/libf2fs_dmd.c */
-		DmdReport;
-		DmdInsertError;
-		PrintToMsg;
-		DmdCheckCostTime;
-		g_dmdReport;
-
-	local:
-		*;
+local:
+    *;
 };
