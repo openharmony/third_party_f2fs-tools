@@ -37,6 +37,9 @@ ohos_shared_library("libf2fs") {
     "libf2fs_log.c",
     "libf2fs_dmd.c"
   ]
+
+  ldflags = [ "-Wl,--exclude-libs=ALL" ]
+  
   version_script = "libf2fs.map"
 
   include_dirs = [ "." ]
