@@ -1,0 +1,95 @@
+# Copyright (c) 2026 Huawei Device Co., Ltd.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+
+{
+global:
+    # f2fs_fs.h - Public API
+    utf8_to_utf16;
+    utf16_to_utf8;
+    log_base_2;
+    get_bits_in_byte;
+    test_and_set_bit_le;
+    test_and_clear_bit_le;
+    test_bit_le;
+    f2fs_test_bit;
+    f2fs_set_bit;
+    f2fs_clear_bit;
+    find_next_bit_le;
+    find_next_zero_bit_le;
+    f2fs_dentry_hash;
+    addrs_per_inode;
+    addrs_per_block;
+    f2fs_max_file_offset;
+    f2fs_cal_crc32;
+    f2fs_crc_valid;
+    f2fs_inode_chksum;
+    f2fs_checkpoint_chksum;
+    write_inode;
+    f2fs_init_configuration;
+    f2fs_dev_is_writable;
+    f2fs_dev_is_umounted;
+    f2fs_devs_are_umounted;
+    get_kernel_version;
+    get_kernel_uname_version;
+    get_device_info;
+    f2fs_get_device_info;
+    f2fs_get_f2fs_info;
+    calc_extra_isize;
+    f2fs_str2encoding;
+    f2fs_encoding2str;
+    f2fs_get_encoding_flags;
+    f2fs_str2encoding_flags;
+    f2fs_load_nls_table;
+    dcache_init;
+    dcache_release;
+    dev_read;
+    dev_readahead;
+    dev_write;
+    dev_write_block;
+    dev_write_dump;
+    dev_fill;
+    dev_fill_block;
+    dev_read_block;
+    dev_reada_block;
+    dev_read_version;
+    f2fs_fsync_device;
+    f2fs_init_sparse_file;
+    f2fs_release_sparse_resource;
+    f2fs_finalize_device;
+    f2fs_get_zoned_model;
+    f2fs_get_zone_blocks;
+    f2fs_report_zone;
+    f2fs_report_zones;
+    f2fs_check_zones;
+    f2fs_reset_zone;
+    f2fs_reset_zones;
+    f2fs_get_usable_segments;
+
+    # f2fs_log.h - Public API
+    SlogInit;
+    SlogExit;
+    SlogWrite;
+    KlogWrite;
+
+    # f2fs_dmd.h - Public API
+    DmdReport;
+    DmdInsertError;
+    PrintToMsg;
+    DmdCheckCostTime;
+
+    # f2fs_dmd.h - Public extern variables
+    g_assertMsg;
+    g_logI;
+    g_logTag;
+    g_reportMsg;
+
+    # Public extern variables
+    c;
+    g_dmdReport;
+
+local:
+    *;
+};
